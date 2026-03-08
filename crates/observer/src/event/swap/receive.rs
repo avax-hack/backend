@@ -149,19 +149,29 @@ async fn handle_swap(
     .await
     .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Swap insert failed: {e}")))?;
 
-    // Update chart bar (1-minute resolution)
-    let bar_time = (now / 60) * 60;
-    let bar = ChartBar {
-        time: bar_time,
-        open: price.clone(),
-        high: price.clone(),
-        low: price.clone(),
-        close: price.clone(),
-        volume: value.clone(),
-    };
-    chart_ctrl::upsert_bar(pool, &mapping.token_id, "1m", &bar)
-        .await
-        .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Chart upsert failed: {e}")))?;
+    // Update chart bars for all timeframes
+    let intervals: &[(&str, i64)] = &[
+        ("1m", 60),
+        ("5m", 300),
+        ("15m", 900),
+        ("1h", 3600),
+        ("4h", 14400),
+        ("1d", 86400),
+    ];
+    for &(interval, secs) in intervals {
+        let bar_time = (now / secs) * secs;
+        let bar = ChartBar {
+            time: bar_time,
+            open: price.clone(),
+            high: price.clone(),
+            low: price.clone(),
+            close: price.clone(),
+            volume: value.clone(),
+        };
+        chart_ctrl::upsert_bar(pool, &mapping.token_id, interval, &bar)
+            .await
+            .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Chart upsert {interval} failed: {e}")))?;
+    }
 
     // Update market_data with latest price
     if let Ok(Some(existing)) = market_ctrl::find_by_token(pool, &mapping.token_id).await {
