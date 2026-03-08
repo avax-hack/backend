@@ -168,7 +168,6 @@ async fn handle_swap(
         let ath_price = max_numeric_str(&existing.ath_price, &price);
         let updated = market_ctrl::MarketDataRow {
             token_price: price.clone(),
-            native_price: price.clone(),
             ath_price,
             ..existing
         };

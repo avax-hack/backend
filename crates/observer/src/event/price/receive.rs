@@ -78,7 +78,6 @@ async fn handle_price_update(
             let ath_price = max_numeric_str(&existing.ath_price, &update.price);
             market_ctrl::MarketDataRow {
                 token_price: update.price.clone(),
-                native_price: update.price.clone(),
                 ath_price,
                 ..existing
             }
@@ -87,7 +86,6 @@ async fn handle_price_update(
             token_id: update.token_id.clone(),
             market_type: "DEX".to_string(),
             token_price: update.price.clone(),
-            native_price: update.price.clone(),
             ath_price: update.price.clone(),
             total_supply: "0".to_string(),
             volume_24h: update.volume.clone(),

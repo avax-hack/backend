@@ -655,7 +655,6 @@ mod tests_pure {
             token_id: "tok_1".to_string(),
             market_type: "CURVE".to_string(),
             token_price: "1.50".to_string(),
-            native_price: "0".to_string(),
             ath_price: "5.00".to_string(),
             total_supply: "1000000".to_string(),
             volume_24h: "50000".to_string(),

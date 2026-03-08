@@ -4,30 +4,28 @@ pub async fn upsert(pool: &PgPool, data: &MarketDataRow) -> anyhow::Result<()> {
     let now = crate::types::common::current_unix_timestamp();
     sqlx::query(
         r#"
-        INSERT INTO market_data (token_id, market_type, token_price, native_price, ath_price,
+        INSERT INTO market_data (token_id, market_type, token_price, ath_price,
                                   total_supply, volume_24h, holder_count, bonding_percent,
                                   milestone_completed, milestone_total, is_graduated, updated_at)
-        VALUES ($1, $2, $3::NUMERIC, $4::NUMERIC, $5::NUMERIC, $6::NUMERIC, $7::NUMERIC,
-                $8, $9::NUMERIC, $10, $11, $12, $13)
+        VALUES ($1, $2, $3::NUMERIC, $4::NUMERIC, $5::NUMERIC, $6::NUMERIC,
+                $7, $8::NUMERIC, $9, $10, $11, $12)
         ON CONFLICT (token_id) DO UPDATE SET
             market_type = $2,
             token_price = $3::NUMERIC,
-            native_price = $4::NUMERIC,
-            ath_price = GREATEST(market_data.ath_price, $5::NUMERIC),
-            total_supply = $6::NUMERIC,
-            volume_24h = $7::NUMERIC,
-            holder_count = $8,
-            bonding_percent = $9::NUMERIC,
-            milestone_completed = $10,
-            milestone_total = $11,
-            is_graduated = $12,
-            updated_at = $13
+            ath_price = GREATEST(market_data.ath_price, $4::NUMERIC),
+            total_supply = $5::NUMERIC,
+            volume_24h = $6::NUMERIC,
+            holder_count = $7,
+            bonding_percent = $8::NUMERIC,
+            milestone_completed = $9,
+            milestone_total = $10,
+            is_graduated = $11,
+            updated_at = $12
         "#,
     )
     .bind(&data.token_id)
     .bind(&data.market_type)
     .bind(&data.token_price)
-    .bind(&data.native_price)
     .bind(&data.ath_price)
     .bind(&data.total_supply)
     .bind(&data.volume_24h)
@@ -46,7 +44,7 @@ pub async fn find_by_token(pool: &PgPool, token_id: &str) -> anyhow::Result<Opti
     let row = sqlx::query_as::<_, MarketDataRow>(
         r#"
         SELECT token_id, market_type, token_price::TEXT as token_price,
-               native_price::TEXT as native_price, ath_price::TEXT as ath_price,
+               ath_price::TEXT as ath_price,
                total_supply::TEXT as total_supply, volume_24h::TEXT as volume_24h,
                holder_count, bonding_percent::TEXT as bonding_percent,
                milestone_completed, milestone_total, is_graduated
@@ -117,7 +115,6 @@ pub struct MarketDataRow {
     pub token_id: String,
     pub market_type: String,
     pub token_price: String,
-    pub native_price: String,
     pub ath_price: String,
     pub total_supply: String,
     pub volume_24h: String,
@@ -138,7 +135,6 @@ mod tests {
             token_id: "0xtoken".to_string(),
             market_type: "CURVE".to_string(),
             token_price: "0.025".to_string(),
-            native_price: "0.001".to_string(),
             ath_price: "0.050".to_string(),
             total_supply: "1000000".to_string(),
             volume_24h: "50000".to_string(),
@@ -160,7 +156,6 @@ mod tests {
             token_id: "0xt".to_string(),
             market_type: "DEX".to_string(),
             token_price: "1".to_string(),
-            native_price: "0.5".to_string(),
             ath_price: "2".to_string(),
             total_supply: "1000".to_string(),
             volume_24h: "100".to_string(),
@@ -180,7 +175,6 @@ mod tests {
             token_id: "0x".to_string(),
             market_type: "IDO".to_string(),
             token_price: "0".to_string(),
-            native_price: "0".to_string(),
             ath_price: "0".to_string(),
             total_supply: "0".to_string(),
             volume_24h: "0".to_string(),

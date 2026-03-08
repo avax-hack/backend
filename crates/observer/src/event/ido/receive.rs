@@ -97,7 +97,6 @@ async fn handle_project_created(
         token_id: e.token.clone(),
         market_type: "IDO".to_string(),
         token_price: price_display.clone(),
-        native_price: price_display.clone(),
         ath_price: price_display,
         total_supply: "1000000000".to_string(),
         volume_24h: "0".to_string(),
