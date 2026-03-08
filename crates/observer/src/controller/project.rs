@@ -1,4 +1,6 @@
+use bigdecimal::BigDecimal;
 use sqlx::PgPool;
+use std::str::FromStr;
 
 /// Insert a new project from a ProjectCreated on-chain event.
 pub async fn insert_from_event(
@@ -15,6 +17,10 @@ pub async fn insert_from_event(
     tx_hash: &str,
     created_at: i64,
 ) -> anyhow::Result<()> {
+    let ido_amount = BigDecimal::from_str(ido_token_amount).unwrap_or_default();
+    let price = BigDecimal::from_str(token_price).unwrap_or_default();
+    let target_raise = (&ido_amount * &price).to_string();
+
     sqlx::query(
         r#"
         INSERT INTO projects (
@@ -24,8 +30,8 @@ pub async fn insert_from_event(
         )
         VALUES (
             $1, $2, $3, $4, '', 'general', $5,
-            'funding', 0, $6::NUMERIC, $7::NUMERIC, $8::NUMERIC,
-            $9, $10, $11
+            'funding', $6::NUMERIC, $7::NUMERIC, $8::NUMERIC, $9::NUMERIC,
+            $10, $11, $12
         )
         ON CONFLICT (project_id) DO NOTHING
         "#,
@@ -35,6 +41,7 @@ pub async fn insert_from_event(
     .bind(symbol)
     .bind(token_uri)
     .bind(creator)
+    .bind(&target_raise)
     .bind(token_price)
     .bind(ido_token_amount)
     .bind(total_supply)
