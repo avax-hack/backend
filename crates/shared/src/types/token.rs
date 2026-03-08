@@ -25,7 +25,6 @@ pub struct IMarketInfo {
     pub market_type: MarketType,
     pub token_id: String,
     pub token_price: String,
-    pub native_price: String,
     pub price: String,
     pub ath_price: String,
     pub total_supply: String,
@@ -170,7 +169,7 @@ mod tests {
             market_type: MarketType::Curve,
             token_id: "0xtoken".to_string(),
             token_price: "0.025".to_string(),
-            native_price: "0.001".to_string(),
+
             price: "0.025".to_string(),
             ath_price: "0.050".to_string(),
             total_supply: "1000000".to_string(),
@@ -210,7 +209,7 @@ mod tests {
                 market_type: MarketType::Dex,
                 token_id: "0xt".to_string(),
                 token_price: "1".to_string(),
-                native_price: "0.5".to_string(),
+    
                 price: "1".to_string(),
                 ath_price: "2".to_string(),
                 total_supply: "1000".to_string(),

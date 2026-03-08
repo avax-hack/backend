@@ -105,7 +105,7 @@ pub async fn get_swap_history(
             event_type: parse_trade_type(&row.event_type),
             native_amount: row.native_amount,
             token_amount: row.token_amount,
-            native_price: row.price,
+
             transaction_hash: row.tx_hash,
             value: row.value,
             account_info: acct,
@@ -310,15 +310,9 @@ async fn build_hold_token_item(
         .as_ref()
         .map(|m| m.token_price.clone())
         .unwrap_or_else(|| "0".to_string());
-    let native_price = market_row
-        .as_ref()
-        .map(|m| m.native_price.clone())
-        .unwrap_or_else(|| "0".to_string());
-
     let balance_info = BalanceInfo {
         balance: row.balance.clone(),
         token_price,
-        native_price,
         created_at: row.updated_at,
     };
 
@@ -547,7 +541,6 @@ fn build_market_info(
                 market_type,
                 token_id: token_id.to_string(),
                 token_price: m.token_price.clone(),
-                native_price: m.native_price.clone(),
                 price: m.token_price.clone(),
                 ath_price: m.ath_price.clone(),
                 total_supply: m.total_supply.clone(),
@@ -562,7 +555,6 @@ fn build_market_info(
             market_type: MarketType::Ido,
             token_id: token_id.to_string(),
             token_price: "0".to_string(),
-            native_price: "0".to_string(),
             price: "0".to_string(),
             ath_price: "0".to_string(),
             total_supply: "0".to_string(),
@@ -663,7 +655,7 @@ mod tests_pure {
             token_id: "tok_1".to_string(),
             market_type: "CURVE".to_string(),
             token_price: "1.50".to_string(),
-            native_price: "0.001".to_string(),
+            native_price: "0".to_string(),
             ath_price: "5.00".to_string(),
             total_supply: "1000000".to_string(),
             volume_24h: "50000".to_string(),

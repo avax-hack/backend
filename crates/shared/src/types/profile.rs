@@ -7,7 +7,6 @@ use super::token::{IMarketInfo, ITokenInfo};
 pub struct BalanceInfo {
     pub balance: String,
     pub token_price: String,
-    pub native_price: String,
     pub created_at: i64,
 }
 
@@ -90,7 +89,7 @@ mod tests {
             market_type: MarketType::Ido,
             token_id: "0xtoken".to_string(),
             token_price: "0.256".to_string(),
-            native_price: "32.50".to_string(),
+
             price: "0.256".to_string(),
             ath_price: "0.5".to_string(),
             total_supply: "1000000".to_string(),
@@ -138,7 +137,7 @@ mod tests {
             balance_info: BalanceInfo {
                 balance: "12500000000000000000000".to_string(),
                 token_price: "0.256".to_string(),
-                native_price: "32.50".to_string(),
+    
                 created_at: 1714608000,
             },
             origin: "ido".to_string(),
@@ -244,7 +243,7 @@ mod tests {
         let info = BalanceInfo {
             balance: "999".to_string(),
             token_price: "1.5".to_string(),
-            native_price: "0.001".to_string(),
+
             created_at: 12345,
         };
         let json = serde_json::to_string(&info).unwrap();

@@ -173,7 +173,6 @@ fn build_market_info(
                 market_type,
                 token_id: token_id.to_string(),
                 token_price: m.token_price.clone(),
-                native_price: m.native_price.clone(),
                 price: m.token_price.clone(),
                 ath_price: m.ath_price.clone(),
                 total_supply: m.total_supply.clone(),
@@ -188,7 +187,6 @@ fn build_market_info(
             market_type: MarketType::Ido,
             token_id: token_id.to_string(),
             token_price: "0".to_string(),
-            native_price: "0".to_string(),
             price: "0".to_string(),
             ath_price: "0".to_string(),
             total_supply: "0".to_string(),
@@ -210,7 +208,7 @@ mod tests {
             token_id: "tok_1".to_string(),
             market_type: market_type.to_string(),
             token_price: "1.50".to_string(),
-            native_price: "0.001".to_string(),
+            native_price: "0".to_string(),
             ath_price: "5.00".to_string(),
             total_supply: "1000000".to_string(),
             volume_24h: "50000".to_string(),
@@ -227,7 +225,7 @@ mod tests {
         let info = build_market_info("tok_abc", None);
         assert_eq!(info.token_id, "tok_abc");
         assert_eq!(info.token_price, "0");
-        assert_eq!(info.native_price, "0");
+
         assert_eq!(info.price, "0");
         assert_eq!(info.holder_count, 0);
         assert!((info.bonding_percent - 0.0).abs() < f64::EPSILON);
@@ -242,7 +240,7 @@ mod tests {
         assert!(matches!(info.market_type, MarketType::Curve));
         assert_eq!(info.token_price, "1.50");
         assert_eq!(info.price, "1.50");
-        assert_eq!(info.native_price, "0.001");
+
         assert_eq!(info.ath_price, "5.00");
         assert_eq!(info.total_supply, "1000000");
         assert_eq!(info.volume, "50000");

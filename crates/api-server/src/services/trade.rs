@@ -75,7 +75,7 @@ pub async fn get_swap_history_ordered(
             event_type,
             native_amount: row.native_amount,
             token_amount: row.token_amount,
-            native_price: row.price.clone(),
+
             transaction_hash: row.tx_hash,
             value: row.value,
             account_info,
