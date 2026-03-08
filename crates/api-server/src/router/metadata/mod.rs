@@ -28,13 +28,13 @@ pub fn router() -> Router<AppState> {
     )
 )]
 pub async fn upload_image(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AuthUser(_session): AuthUser,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    let (filename, data) = extract_file(&mut multipart).await?;
-    let uri = upload_service::upload_image(&filename, &data).await?;
-    Ok(Json(serde_json::json!({ "uri": uri })))
+    let (_filename, data) = extract_file(&mut multipart).await?;
+    let uri = upload_service::upload_image(&state.r2, &data).await?;
+    Ok(Json(serde_json::json!({ "image_uri": uri })))
 }
 
 #[utoipa::path(
@@ -49,12 +49,12 @@ pub async fn upload_image(
     )
 )]
 pub async fn upload_evidence(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     AuthUser(_session): AuthUser,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
     let (filename, data) = extract_file(&mut multipart).await?;
-    let uri = upload_service::upload_evidence(&filename, &data).await?;
+    let uri = upload_service::upload_evidence(&state.r2, &filename, &data).await?;
     Ok(Json(serde_json::json!({ "uri": uri })))
 }
 
@@ -73,10 +73,6 @@ async fn extract_file(multipart: &mut Multipart) -> AppResult<(String, Vec<u8>)>
                 .bytes()
                 .await
                 .map_err(|e| AppError::BadRequest(format!("Failed to read file: {e}")))?;
-
-            if data.is_empty() {
-                return Err(AppError::BadRequest("Empty file".to_string()));
-            }
 
             return Ok((filename, data.to_vec()));
         }
