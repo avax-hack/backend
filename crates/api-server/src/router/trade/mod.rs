@@ -15,12 +15,12 @@ use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/chart/:tokenAddress", get(get_chart))
-        .route("/swap-history/:tokenId", get(get_swap_history))
-        .route("/holder/:tokenId", get(get_holders))
-        .route("/market/:tokenId", get(get_market))
-        .route("/metrics/:tokenId", get(get_metrics))
-        .route("/quote/:tokenId", get(get_quote))
+        .route("/chart/{tokenAddress}", get(get_chart))
+        .route("/swap-history/{tokenId}", get(get_swap_history))
+        .route("/holder/{tokenId}", get(get_holders))
+        .route("/market/{tokenId}", get(get_market))
+        .route("/metrics/{tokenId}", get(get_metrics))
+        .route("/quote/{tokenId}", get(get_quote))
 }
 
 #[utoipa::path(

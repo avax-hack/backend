@@ -14,13 +14,13 @@ use crate::state::AppState;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/:tokenId", get(get_token))
+    Router::new().route("/{tokenId}", get(get_token))
 }
 
 pub fn order_router() -> Router<AppState> {
     Router::new()
-        .route("/project/:sortType", get(get_project_list))
-        .route("/:sortType", get(get_token_list))
+        .route("/project/{sortType}", get(get_project_list))
+        .route("/{sortType}", get(get_token_list))
 }
 
 pub fn trend_router() -> Router<AppState> {

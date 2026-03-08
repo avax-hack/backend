@@ -14,8 +14,8 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/submit/:milestoneId", post(submit_milestone))
-        .route("/verification/:milestoneId", get(get_verification))
+        .route("/submit/{milestoneId}", post(submit_milestone))
+        .route("/verification/{milestoneId}", get(get_verification))
 }
 
 #[utoipa::path(

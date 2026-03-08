@@ -19,8 +19,8 @@ pub fn router() -> Router<AppState> {
         .route("/featured", get(get_featured))
         .route("/create", post(create_project))
         .route("/validate-symbol", get(validate_symbol))
-        .route("/investor/:projectId", get(get_investors))
-        .route("/:projectId", get(get_project))
+        .route("/investor/{projectId}", get(get_investors))
+        .route("/{projectId}", get(get_project))
 }
 
 #[utoipa::path(

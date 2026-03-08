@@ -13,8 +13,8 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/overview/:projectId", get(get_overview))
-        .route("/stats/:projectId", get(get_stats))
+        .route("/overview/{projectId}", get(get_overview))
+        .route("/stats/{projectId}", get(get_stats))
 }
 
 /// Verify the authenticated user is the project owner.

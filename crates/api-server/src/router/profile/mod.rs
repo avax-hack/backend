@@ -13,13 +13,13 @@ use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/:address", get(get_profile))
-        .route("/hold-token/:accountId", get(get_hold_tokens))
-        .route("/swap-history/:accountId", get(get_swap_history))
-        .route("/ido-history/:accountId", get(get_ido_history))
-        .route("/refund-history/:accountId", get(get_refund_history))
-        .route("/portfolio/:accountId", get(get_portfolio))
-        .route("/tokens/created/:accountId", get(get_created_tokens))
+        .route("/{address}", get(get_profile))
+        .route("/hold-token/{accountId}", get(get_hold_tokens))
+        .route("/swap-history/{accountId}", get(get_swap_history))
+        .route("/ido-history/{accountId}", get(get_ido_history))
+        .route("/refund-history/{accountId}", get(get_refund_history))
+        .route("/portfolio/{accountId}", get(get_portfolio))
+        .route("/tokens/created/{accountId}", get(get_created_tokens))
 }
 
 pub fn account_router() -> Router<AppState> {
