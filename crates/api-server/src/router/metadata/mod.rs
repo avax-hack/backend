@@ -7,6 +7,8 @@ use axum::{
 use openlaunch_shared::error::{AppError, AppResult};
 
 use crate::middleware::auth::AuthUser;
+use crate::services::metadata as metadata_service;
+use crate::services::metadata::CreateMetadataRequest;
 use crate::services::upload as upload_service;
 use crate::state::AppState;
 
@@ -14,6 +16,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/image", post(upload_image))
         .route("/evidence", post(upload_evidence))
+        .route("/create", post(create_metadata))
 }
 
 #[utoipa::path(
@@ -81,4 +84,24 @@ async fn extract_file(multipart: &mut Multipart) -> AppResult<(String, Vec<u8>)>
     Err(AppError::BadRequest(
         "No file field found in multipart form".to_string(),
     ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/metadata/create",
+    tag = "metadata",
+    request_body = CreateMetadataRequest,
+    responses(
+        (status = 200, description = "Metadata created", body = serde_json::Value),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Not authenticated")
+    )
+)]
+pub async fn create_metadata(
+    State(state): State<AppState>,
+    AuthUser(_session): AuthUser,
+    Json(body): Json<CreateMetadataRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let uri = metadata_service::create_metadata(&state.r2, &body).await?;
+    Ok(Json(serde_json::json!({ "metadata_uri": uri })))
 }

@@ -6,3 +6,4 @@ pub mod trade;
 pub mod profile;
 pub mod builder;
 pub mod upload;
+pub mod metadata;
