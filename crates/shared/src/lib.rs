@@ -6,3 +6,4 @@ pub mod client;
 pub mod contracts;
 pub mod utils;
 pub mod metrics;
+pub mod storage;
