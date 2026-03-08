@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use openlaunch_shared::client::RpcClient;
 use openlaunch_shared::client::provider::ProviderId;
@@ -62,8 +63,15 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Build HTTP + WebSocket router.
+    let max_connections: usize = std::env::var("WS_MAX_CONNECTIONS")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse()
+        .unwrap_or(1000);
+
     let app_state = server::AppState {
         producers: Arc::clone(&producers),
+        connection_count: Arc::new(AtomicUsize::new(0)),
+        max_connections,
     };
 
     let app = server::build_router(app_state).layer(CorsLayer::permissive());

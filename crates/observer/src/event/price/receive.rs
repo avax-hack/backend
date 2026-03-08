@@ -17,6 +17,16 @@ pub async fn process_price_updates(
     receive_mgr: &Arc<ReceiveManager>,
 ) -> Result<(), ObserverError> {
     while let Some(batch) = rx.recv().await {
+        // Wait until dependencies are met before processing
+        while !receive_mgr.can_process(EventType::Price, batch.to_block) {
+            tracing::warn!(
+                event_type = "Price",
+                to_block = batch.to_block,
+                "Dependencies not met, waiting before processing"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         tracing::info!(
             from = batch.from_block,
             to = batch.to_block,
@@ -43,9 +53,12 @@ pub async fn process_price_updates(
 /// Compare two numeric strings and return the greater value.
 /// Falls back to `new_val` if either string cannot be parsed.
 fn max_numeric_str(existing: &str, new_val: &str) -> String {
-    let existing_f: f64 = existing.parse().unwrap_or(0.0);
-    let new_f: f64 = new_val.parse().unwrap_or(0.0);
-    if existing_f >= new_f {
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    let existing_bd = BigDecimal::from_str(existing).unwrap_or_default();
+    let new_bd = BigDecimal::from_str(new_val).unwrap_or_default();
+    if existing_bd >= new_bd {
         existing.to_string()
     } else {
         new_val.to_string()

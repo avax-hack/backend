@@ -37,11 +37,31 @@ impl RetryConfig {
     }
 }
 
+/// Check whether an error is worth retrying.
+///
+/// Returns `false` for errors that indicate a permanent failure (e.g. invalid
+/// input, already-processed state, or on-chain revert). Everything else is
+/// assumed to be transient and therefore retriable.
+fn is_retriable(error: &anyhow::Error) -> bool {
+    let msg = error.to_string().to_lowercase();
+
+    let non_retriable_patterns = [
+        "parse",
+        "invalid",
+        "already graduated",
+        "not active",
+        "reverted",
+    ];
+
+    !non_retriable_patterns.iter().any(|p| msg.contains(p))
+}
+
 /// Execute an async task with exponential backoff retries.
 ///
 /// The closure `f` is called on each attempt. If it returns `Ok(T)`, the result
 /// is returned immediately. On `Err`, the error is logged and the next attempt
-/// is scheduled after a backoff delay.
+/// is scheduled after a backoff delay — unless the error is non-retriable, in
+/// which case it is returned immediately.
 ///
 /// Returns the final error if all attempts are exhausted.
 pub async fn run_with_retry<F, Fut, T>(
@@ -80,6 +100,16 @@ where
                     error = %err,
                     "Task attempt failed"
                 );
+
+                if !is_retriable(&err) {
+                    tracing::warn!(
+                        task = task_name,
+                        error = %err,
+                        "Error is non-retriable, aborting retries"
+                    );
+                    return Err(err);
+                }
+
                 last_error = Some(err);
 
                 if attempt < config.max_attempts {
@@ -139,6 +169,35 @@ mod tests {
         })
         .await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_retriable_transient_errors() {
+        assert!(is_retriable(&anyhow::anyhow!("connection timeout")));
+        assert!(is_retriable(&anyhow::anyhow!("network error")));
+        assert!(is_retriable(&anyhow::anyhow!("server unavailable")));
+    }
+
+    #[test]
+    fn test_is_retriable_non_retriable_errors() {
+        assert!(!is_retriable(&anyhow::anyhow!("failed to parse address")));
+        assert!(!is_retriable(&anyhow::anyhow!("invalid token address")));
+        assert!(!is_retriable(&anyhow::anyhow!("token already graduated")));
+        assert!(!is_retriable(&anyhow::anyhow!("project not active")));
+        assert!(!is_retriable(&anyhow::anyhow!("transaction reverted")));
+    }
+
+    #[tokio::test]
+    async fn test_run_with_retry_aborts_on_non_retriable_error() {
+        let attempts = AtomicU32::new(0);
+        let config = RetryConfig::new(5).with_backoff(10, 100, 2.0);
+        let result: anyhow::Result<()> = run_with_retry(&config, "test_no_retry", || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            async { Err(anyhow::anyhow!("transaction reverted")) }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(attempts.load(Ordering::SeqCst), 1, "should not retry non-retriable errors");
     }
 
     #[test]

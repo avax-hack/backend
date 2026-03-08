@@ -22,14 +22,56 @@ pub struct PoolTokenMapping {
     pub is_token0: bool,
 }
 
+/// How often (in batches) to reload pool mappings from the database.
+const MAPPING_RELOAD_INTERVAL: u64 = 50;
+
+/// Load pool mappings from the database.
+async fn load_mappings(reader_pool: &PgPool) -> Vec<PoolTokenMapping> {
+    let rows = crate::controller::lp::load_pool_mappings(reader_pool)
+        .await
+        .unwrap_or_default();
+    rows.into_iter()
+        .map(|r| PoolTokenMapping {
+            pool_id: r.pool_id,
+            token_id: r.token_id,
+            is_token0: r.is_token0,
+        })
+        .collect()
+}
+
 /// Process Swap event batches received from the stream.
+///
+/// Pool mappings are reloaded from `reader_pool` every [`MAPPING_RELOAD_INTERVAL`]
+/// batches, and also whenever an unknown pool ID is encountered, so that newly
+/// created pools are picked up without restarting the observer.
 pub async fn process_swap_events(
     pool: &PgPool,
     rx: &mut mpsc::Receiver<EventBatch<RawSwapEvent>>,
     receive_mgr: &Arc<ReceiveManager>,
-    mappings: &[PoolTokenMapping],
+    reader_pool: &PgPool,
 ) -> Result<(), ObserverError> {
+    let mut mappings = load_mappings(reader_pool).await;
+    tracing::info!(count = mappings.len(), "Loaded initial pool mappings for swap filtering");
+    let mut batch_count: u64 = 0;
+
     while let Some(batch) = rx.recv().await {
+        // Wait until dependencies are met before processing
+        while !receive_mgr.can_process(EventType::Swap, batch.to_block) {
+            tracing::warn!(
+                event_type = "Swap",
+                to_block = batch.to_block,
+                "Dependencies not met, waiting before processing"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Periodically reload pool mappings to pick up newly created pools
+        batch_count += 1;
+        if batch_count % MAPPING_RELOAD_INTERVAL == 0 {
+            mappings = load_mappings(reader_pool).await;
+            tracing::info!(count = mappings.len(), "Reloaded pool mappings (periodic)");
+        }
+
         tracing::info!(
             from = batch.from_block,
             to = batch.to_block,
@@ -37,9 +79,28 @@ pub async fn process_swap_events(
             "Processing Swap event batch"
         );
 
+        let mut reloaded_for_unknown = false;
         for event in &batch.events {
-            if let Err(e) = handle_swap(pool, event, mappings).await {
+            if let Err(e) = handle_swap(pool, event, &mappings).await {
                 if e.is_skippable() {
+                    // On unknown pool, reload mappings once per batch and retry
+                    if !reloaded_for_unknown {
+                        reloaded_for_unknown = true;
+                        mappings = load_mappings(reader_pool).await;
+                        tracing::info!(
+                            count = mappings.len(),
+                            "Reloaded pool mappings (unknown pool encountered)"
+                        );
+                        // Retry this event with fresh mappings
+                        if let Err(e2) = handle_swap(pool, event, &mappings).await {
+                            if e2.is_skippable() {
+                                tracing::warn!(error = %e2, "Skipping Swap event after mapping reload");
+                                continue;
+                            }
+                            return Err(e2);
+                        }
+                        continue;
+                    }
                     tracing::warn!(error = %e, "Skipping Swap event");
                     continue;
                 }
@@ -147,9 +208,12 @@ fn parse_swap_amounts(event: &RawSwapEvent, is_token0: bool) -> (String, String,
 }
 
 fn max_numeric_str(existing: &str, new_val: &str) -> String {
-    let existing_f: f64 = existing.parse().unwrap_or(0.0);
-    let new_f: f64 = new_val.parse().unwrap_or(0.0);
-    if existing_f >= new_f {
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    let existing_bd = BigDecimal::from_str(existing).unwrap_or_default();
+    let new_bd = BigDecimal::from_str(new_val).unwrap_or_default();
+    if existing_bd >= new_bd {
         existing.to_string()
     } else {
         new_val.to_string()

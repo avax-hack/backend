@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alloy::primitives::{Address, U256};
 use alloy::providers::ProviderBuilder;
@@ -44,10 +44,15 @@ pub async fn run(
 
     // Bug 42 fix: Track tokens that already have an in-flight collect task
     // to avoid sending duplicate tasks every poll cycle.
-    let mut in_flight: HashSet<String> = HashSet::new();
+    // Bug 7 fix: Use HashMap<String, Instant> with time-based expiry (5 min)
+    // so tokens don't stay in-flight forever if the executor never signals completion.
+    let mut in_flight: HashMap<String, Instant> = HashMap::new();
 
     loop {
         tokio::time::sleep(poll_interval).await;
+
+        // Bug 7 fix: Evict in-flight entries older than 5 minutes.
+        in_flight.retain(|_, added_at| added_at.elapsed() < Duration::from_secs(300));
 
         // Query DB for graduated projects (status = "completed" maps to on-chain Graduated)
         let graduated_projects = match fetch_graduated_projects(&db).await {
@@ -70,7 +75,7 @@ pub async fn run(
 
         for token_addr_str in &graduated_projects {
             // Bug 42 fix: Skip tokens already being processed.
-            if in_flight.contains(token_addr_str) {
+            if in_flight.contains_key(token_addr_str) {
                 tracing::debug!(
                     token = %token_addr_str,
                     "Collect task already in-flight, skipping"
@@ -126,7 +131,7 @@ pub async fn run(
                             tracing::error!("Collect task channel closed");
                             return Ok(());
                         }
-                        in_flight.insert(token_addr_str.clone());
+                        in_flight.insert(token_addr_str.clone(), Instant::now());
                     } else {
                         // If fees dropped below threshold, remove from in-flight
                         // so it can be re-evaluated next cycle.

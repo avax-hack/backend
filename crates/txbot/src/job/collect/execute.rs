@@ -69,7 +69,7 @@ pub async fn run(
         let result = run_with_retry(&retry_config, &task_name, || {
             let contract = ido_contract.clone();
             async move {
-                let tx_builder = contract.collectFees(token_addr);
+                let tx_builder = contract.collectFees(token_addr).gas(300_000);
                 let pending_tx = tx_builder.send().await?;
 
                 tracing::info!(

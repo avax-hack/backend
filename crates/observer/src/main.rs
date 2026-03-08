@@ -164,25 +164,11 @@ async fn main() -> anyhow::Result<()> {
         let db = Arc::clone(&db);
         let receive_mgr = Arc::clone(&receive_mgr);
         join_set.spawn(async move {
-            // Load pool mappings from DB (populated by LiquidityAllocated events)
-            let rows = controller::lp::load_pool_mappings(db.writer())
-                .await
-                .unwrap_or_default();
-            let mappings: Vec<event::swap::receive::PoolTokenMapping> = rows
-                .into_iter()
-                .map(|r| event::swap::receive::PoolTokenMapping {
-                    pool_id: r.pool_id,
-                    token_id: r.token_id,
-                    is_token0: r.is_token0,
-                })
-                .collect();
-            tracing::info!(count = mappings.len(), "Loaded pool mappings for swap filtering");
-
             event::swap::receive::process_swap_events(
                 db.writer(),
                 &mut swap_rx,
                 &receive_mgr,
-                &mappings,
+                db.reader(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
@@ -220,9 +206,7 @@ async fn main() -> anyhow::Result<()> {
 
                     let safe_block = match (stream_block, receive_block) {
                         (Some(s), Some(r)) => s.min(r),
-                        (Some(s), None) => s,
-                        (None, Some(r)) => r,
-                        (None, None) => continue,
+                        _ => continue,
                     };
 
                     if let Err(e) = block_ctrl::set_last_block(

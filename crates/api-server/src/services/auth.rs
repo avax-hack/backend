@@ -111,7 +111,7 @@ fn verify_signature(message: &str, signature: &str, expected_address: &str) -> a
     let sig = AlloySig::new(
         alloy::primitives::U256::from_be_slice(&sig_bytes[..32]),
         alloy::primitives::U256::from_be_slice(&sig_bytes[32..64]),
-        v != 0,
+        v == 1,
     );
 
     // recover_address_from_msg applies EIP-191 personal_sign hashing internally

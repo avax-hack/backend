@@ -23,6 +23,9 @@ pub enum AppError {
     #[error("Too many requests")]
     TooManyRequests { retry_after: u64 },
 
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -50,6 +53,7 @@ impl IntoResponse for AppError {
                 );
                 return response;
             }
+            AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone(), "SERVICE_UNAVAILABLE"),
             AppError::Internal(err) => {
                 tracing::error!("Internal error: {err:?}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string(), "INTERNAL_ERROR")

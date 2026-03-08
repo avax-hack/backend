@@ -27,37 +27,37 @@ impl TxBotMetrics {
     }
 
     pub fn record_graduate_attempt(&self) {
-        self.graduate_attempts.fetch_add(1, Ordering::Relaxed);
+        self.graduate_attempts.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn record_graduate_success(&self) {
-        self.graduate_successes.fetch_add(1, Ordering::Relaxed);
+        self.graduate_successes.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn record_graduate_failure(&self) {
-        self.graduate_failures.fetch_add(1, Ordering::Relaxed);
+        self.graduate_failures.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn record_collect_attempt(&self) {
-        self.collect_attempts.fetch_add(1, Ordering::Relaxed);
+        self.collect_attempts.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn record_collect_success(&self) {
-        self.collect_successes.fetch_add(1, Ordering::Relaxed);
+        self.collect_successes.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn record_collect_failure(&self) {
-        self.collect_failures.fetch_add(1, Ordering::Relaxed);
+        self.collect_failures.fetch_add(1, Ordering::SeqCst);
     }
 
     fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
-            graduate_attempts: self.graduate_attempts.load(Ordering::Relaxed),
-            graduate_successes: self.graduate_successes.load(Ordering::Relaxed),
-            graduate_failures: self.graduate_failures.load(Ordering::Relaxed),
-            collect_attempts: self.collect_attempts.load(Ordering::Relaxed),
-            collect_successes: self.collect_successes.load(Ordering::Relaxed),
-            collect_failures: self.collect_failures.load(Ordering::Relaxed),
+            graduate_attempts: self.graduate_attempts.load(Ordering::SeqCst),
+            graduate_successes: self.graduate_successes.load(Ordering::SeqCst),
+            graduate_failures: self.graduate_failures.load(Ordering::SeqCst),
+            collect_attempts: self.collect_attempts.load(Ordering::SeqCst),
+            collect_successes: self.collect_successes.load(Ordering::SeqCst),
+            collect_failures: self.collect_failures.load(Ordering::SeqCst),
         }
     }
 }

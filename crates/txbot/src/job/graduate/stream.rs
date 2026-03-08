@@ -45,6 +45,17 @@ pub async fn run(
     let mut graduated_tokens: HashSet<Address> = HashSet::new();
 
     loop {
+        // Bug 6 fix: Cap the graduated_tokens set to prevent unbounded growth.
+        // The executor already checks on-chain status before sending TX,
+        // so false re-sends after clearing are caught downstream.
+        if graduated_tokens.len() > 10_000 {
+            tracing::info!(
+                size = graduated_tokens.len(),
+                "Clearing graduated_tokens set to prevent unbounded growth"
+            );
+            graduated_tokens.clear();
+        }
+
         tokio::time::sleep(poll_interval).await;
 
         let current_block = match provider.get_block_number().await {

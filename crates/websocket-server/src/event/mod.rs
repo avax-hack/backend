@@ -46,8 +46,17 @@ impl BroadcastEventProducer {
 impl EventProducer for BroadcastEventProducer {
     fn publish(&self, key: &str, event: WsEvent) {
         let tx = self.get_or_create_sender(key);
-        // Ignore send errors (no active receivers is not an error).
-        let _ = tx.send(event);
+        if let Err(e) = tx.send(event) {
+            tracing::warn!(
+                channel = %key,
+                "Event dropped, no active subscribers for channel: {}",
+                e
+            );
+        }
+        // Bug 14 fix: Remove channels with no active subscribers to prevent unbounded growth.
+        if tx.receiver_count() == 0 {
+            self.channels.remove(key);
+        }
     }
 
     fn subscribe(&self, key: &str) -> broadcast::Receiver<WsEvent> {

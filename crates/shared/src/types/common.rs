@@ -35,7 +35,7 @@ impl PaginationParams {
 
     pub fn offset(&self) -> i64 {
         let v = self.validated();
-        (v.page - 1) * v.limit
+        v.page.saturating_sub(1).saturating_mul(v.limit)
     }
 }
 

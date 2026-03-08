@@ -26,6 +26,17 @@ pub async fn insert_batch(
     milestones: &[(i32, String, String, i32)],
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
+    insert_batch_with_tx(&mut tx, project_id, milestones).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Insert milestones using an existing transaction.
+pub async fn insert_batch_with_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project_id: &str,
+    milestones: &[(i32, String, String, i32)],
+) -> anyhow::Result<()> {
     for (index, title, description, allocation_bps) in milestones {
         sqlx::query(
             r#"
@@ -38,10 +49,9 @@ pub async fn insert_batch(
         .bind(title)
         .bind(description)
         .bind(allocation_bps)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 

@@ -134,6 +134,63 @@ pub async fn insert(
     telegram: Option<&str>,
     created_at: i64,
 ) -> anyhow::Result<()> {
+    insert_with_executor(
+        pool, project_id, name, symbol, image_uri, description, tagline, category,
+        creator, target_raise, ido_supply, total_supply, deadline, website, twitter,
+        github, telegram, created_at,
+    )
+    .await
+}
+
+/// Insert a project using an existing transaction.
+pub async fn insert_with_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    project_id: &str,
+    name: &str,
+    symbol: &str,
+    image_uri: &str,
+    description: Option<&str>,
+    tagline: &str,
+    category: &str,
+    creator: &str,
+    target_raise: &str,
+    ido_supply: &str,
+    total_supply: &str,
+    deadline: i64,
+    website: Option<&str>,
+    twitter: Option<&str>,
+    github: Option<&str>,
+    telegram: Option<&str>,
+    created_at: i64,
+) -> anyhow::Result<()> {
+    insert_with_executor(
+        &mut **tx, project_id, name, symbol, image_uri, description, tagline, category,
+        creator, target_raise, ido_supply, total_supply, deadline, website, twitter,
+        github, telegram, created_at,
+    )
+    .await
+}
+
+async fn insert_with_executor<'e, E: sqlx::Executor<'e, Database = sqlx::Postgres>>(
+    executor: E,
+    project_id: &str,
+    name: &str,
+    symbol: &str,
+    image_uri: &str,
+    description: Option<&str>,
+    tagline: &str,
+    category: &str,
+    creator: &str,
+    target_raise: &str,
+    ido_supply: &str,
+    total_supply: &str,
+    deadline: i64,
+    website: Option<&str>,
+    twitter: Option<&str>,
+    github: Option<&str>,
+    telegram: Option<&str>,
+    created_at: i64,
+) -> anyhow::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO projects (
@@ -166,7 +223,7 @@ pub async fn insert(
     .bind(github)
     .bind(telegram)
     .bind(created_at)
-    .execute(pool)
+    .execute(executor)
     .await?;
 
     Ok(())

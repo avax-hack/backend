@@ -57,7 +57,7 @@ pub async fn submit_evidence(
 
     let now = current_unix_timestamp();
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE milestones SET
             evidence_text = $2,
@@ -74,6 +74,12 @@ pub async fn submit_evidence(
     .execute(db.writer())
     .await
     .map_err(|e| AppError::Internal(e.into()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Milestone not found or not in pending status".to_string(),
+        ));
+    }
 
     Ok(())
 }

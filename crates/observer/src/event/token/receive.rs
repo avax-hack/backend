@@ -20,6 +20,16 @@ pub async fn process_token_events(
     receive_mgr: &Arc<ReceiveManager>,
 ) -> Result<(), ObserverError> {
     while let Some(batch) = rx.recv().await {
+        // Wait until dependencies are met before processing
+        while !receive_mgr.can_process(EventType::Token, batch.to_block) {
+            tracing::warn!(
+                event_type = "Token",
+                to_block = batch.to_block,
+                "Dependencies not met, waiting before processing"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         tracing::info!(
             from = batch.from_block,
             to = batch.to_block,

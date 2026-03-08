@@ -33,7 +33,7 @@ pub struct JsonRpcResponse {
 pub struct JsonRpcPush {
     pub jsonrpc: String,
     pub method: String,
-    pub result: serde_json::Value,
+    pub params: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,11 +63,14 @@ impl JsonRpcResponse {
 }
 
 impl JsonRpcPush {
-    pub fn new(method: String, result: serde_json::Value) -> Self {
+    pub fn new(method: String, subscription: String, result: serde_json::Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             method,
-            result,
+            params: serde_json::json!({
+                "subscription": subscription,
+                "result": result,
+            }),
         }
     }
 }
@@ -184,7 +187,7 @@ fn handle_keyed_subscribe(
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    let push = JsonRpcPush::new(method.clone(), event.data);
+                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
                     if let Ok(json) = serde_json::to_string(&push) {
                         if tx.send(json).await.is_err() {
                             break;
@@ -192,7 +195,8 @@ fn handle_keyed_subscribe(
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(channel = %channel_key_for_task, lagged = n, "Subscriber lagged, skipping messages");
+                    tracing::warn!(channel = %channel_key_for_task, lagged = n, "Subscriber lagged, terminating subscription");
+                    break;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
@@ -222,12 +226,13 @@ fn handle_global_subscribe(
 
     let mut rx = producer.subscribe(&channel_key);
     let tx = outbound_tx.clone();
+    let channel_key_for_task = channel_key.clone();
 
     let handle = tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    let push = JsonRpcPush::new(method.clone(), event.data);
+                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
                     if let Ok(json) = serde_json::to_string(&push) {
                         if tx.send(json).await.is_err() {
                             break;
@@ -235,7 +240,8 @@ fn handle_global_subscribe(
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(lagged = n, "new_content subscriber lagged");
+                    tracing::warn!(lagged = n, "new_content subscriber lagged, terminating subscription");
+                    break;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;

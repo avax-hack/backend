@@ -44,6 +44,9 @@ pub async fn get_chart(
     Path(token_address): Path<String>,
     Query(params): Query<ChartRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
+    if params.from >= params.to {
+        return Err(AppError::BadRequest("'from' must be less than 'to'".to_string()));
+    }
     let bars = trade_service::get_chart(&state.db, &token_address, &params).await?;
     Ok(Json(serde_json::json!({ "bars": bars })))
 }
@@ -93,6 +96,9 @@ pub async fn get_swap_history(
         _ => None, // "ALL" or missing means no filter
     };
     let direction = query.direction.as_deref().unwrap_or("DESC");
+    if direction != "ASC" && direction != "DESC" {
+        return Err(AppError::BadRequest("direction must be 'ASC' or 'DESC'".to_string()));
+    }
     let result =
         trade_service::get_swap_history_ordered(
             &state.db, &token_id, &pagination, trade_type_filter, direction,
@@ -246,7 +252,18 @@ pub async fn get_quote(
     Path(token_id): Path<String>,
     Query(query): Query<QuoteQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let is_buy = query.trade_type.to_uppercase() != "SELL";
+    if query.amount.is_empty() {
+        return Err(AppError::BadRequest("amount is required".to_string()));
+    }
+    if query.amount.parse::<f64>().is_err() {
+        return Err(AppError::BadRequest("amount must be a valid number".to_string()));
+    }
+
+    let upper_type = query.trade_type.to_uppercase();
+    if upper_type != "BUY" && upper_type != "SELL" {
+        return Err(AppError::BadRequest("type must be 'BUY' or 'SELL'".to_string()));
+    }
+    let is_buy = upper_type != "SELL";
     let quote =
         trade_service::get_quote(
             &state.db, &token_id, &query.amount, is_buy, query.slippage,

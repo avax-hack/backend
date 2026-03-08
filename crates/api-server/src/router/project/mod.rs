@@ -139,6 +139,12 @@ pub async fn validate_symbol(
     State(state): State<AppState>,
     Query(query): Query<SymbolQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
+    if query.symbol.is_empty() {
+        return Err(AppError::BadRequest("symbol is required".to_string()));
+    }
+    if query.symbol.len() > 10 {
+        return Err(AppError::BadRequest("symbol must be 10 characters or fewer".to_string()));
+    }
     let is_available = project_service::validate_symbol(&state.db, &query.symbol).await?;
 
     Ok(Json(serde_json::json!({

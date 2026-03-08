@@ -37,7 +37,7 @@ pub async fn run_health_check(client: Arc<RpcClient>, interval: Duration) {
             match tokio::time::timeout(Duration::from_secs(5), provider.get_block_number()).await {
                 Ok(Ok(block)) => {
                     let latest = client.latest_block();
-                    if latest > 0 && block + 10 < latest {
+                    if latest > 0 && block + 10 <= latest {
                         // Provider is more than 10 blocks behind — mark as stale
                         tracing::warn!(
                             provider = ?id,
