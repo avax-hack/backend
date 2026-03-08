@@ -14,10 +14,10 @@ use crate::event::error::ObserverError;
 use crate::event::swap::stream::RawSwapEvent;
 use crate::sync::receive::ReceiveManager;
 
-/// Mapping from pool address to (token_id, is_token0).
-/// In production this would be loaded from the DB; here we accept it as a parameter.
+/// Mapping from V4 pool ID to (token_address, is_token0).
+/// Loaded from DB based on LiquidityAllocated events.
 pub struct PoolTokenMapping {
-    pub pool_address: String,
+    pub pool_id: String,
     pub token_id: String,
     pub is_token0: bool,
 }
@@ -60,9 +60,9 @@ async fn handle_swap(
 ) -> Result<(), ObserverError> {
     let mapping = mappings
         .iter()
-        .find(|m| m.pool_address == event.pool)
+        .find(|m| m.pool_id == event.pool_id)
         .ok_or_else(|| {
-            ObserverError::skippable(format!("Unknown pool address: {}", event.pool))
+            ObserverError::skippable(format!("Unknown pool ID: {}", event.pool_id))
         })?;
 
     let (native_amount, token_amount, event_type) = parse_swap_amounts(event, mapping.is_token0);
@@ -89,7 +89,7 @@ async fn handle_swap(
     .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Swap insert failed: {e}")))?;
 
     // Update chart bar (1-minute resolution)
-    let bar_time = (now / 60) * 60; // Round to minute
+    let bar_time = (now / 60) * 60;
     let bar = ChartBar {
         time: bar_time,
         open: price.clone(),
@@ -104,10 +104,11 @@ async fn handle_swap(
 
     // Update market_data with latest price
     if let Ok(Some(existing)) = market_ctrl::find_by_token(pool, &mapping.token_id).await {
+        let ath_price = max_numeric_str(&existing.ath_price, &price);
         let updated = market_ctrl::MarketDataRow {
             token_price: price.clone(),
             native_price: price.clone(),
-            ath_price: price.clone(),
+            ath_price,
             ..existing
         };
         market_ctrl::upsert(pool, &updated)
@@ -128,8 +129,6 @@ async fn handle_swap(
 }
 
 /// Parse swap amounts into (native_amount, token_amount, event_type).
-/// If the project token is token0, a positive amount0 means the pool received tokens
-/// (user sold), and negative means user bought.
 fn parse_swap_amounts(event: &RawSwapEvent, is_token0: bool) -> (String, String, String) {
     let amount0: i128 = event.amount0.parse().unwrap_or(0);
     let amount1: i128 = event.amount1.parse().unwrap_or(0);
@@ -147,11 +146,22 @@ fn parse_swap_amounts(event: &RawSwapEvent, is_token0: bool) -> (String, String,
     }
 }
 
+fn max_numeric_str(existing: &str, new_val: &str) -> String {
+    let existing_f: f64 = existing.parse().unwrap_or(0.0);
+    let new_f: f64 = new_val.parse().unwrap_or(0.0);
+    if existing_f >= new_f {
+        existing.to_string()
+    } else {
+        new_val.to_string()
+    }
+}
+
 fn compute_price(native_amount: &str, token_amount: &str) -> String {
     let native: f64 = native_amount.parse().unwrap_or(0.0);
     let token: f64 = token_amount.parse().unwrap_or(1.0);
     if token == 0.0 {
         return "0".to_string();
     }
-    format!("{:.18}", native / token)
+    let price = (native * 1e12) / token;
+    format!("{price:.18}")
 }

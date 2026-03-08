@@ -40,6 +40,18 @@ pub async fn process_price_updates(
     Ok(())
 }
 
+/// Compare two numeric strings and return the greater value.
+/// Falls back to `new_val` if either string cannot be parsed.
+fn max_numeric_str(existing: &str, new_val: &str) -> String {
+    let existing_f: f64 = existing.parse().unwrap_or(0.0);
+    let new_f: f64 = new_val.parse().unwrap_or(0.0);
+    if existing_f >= new_f {
+        existing.to_string()
+    } else {
+        new_val.to_string()
+    }
+}
+
 async fn handle_price_update(
     pool: &PgPool,
     update: &PriceUpdate,
@@ -49,12 +61,15 @@ async fn handle_price_update(
         .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Market data read failed: {e}")))?;
 
     let data = match existing {
-        Some(existing) => market_ctrl::MarketDataRow {
-            token_price: update.price.clone(),
-            native_price: update.price.clone(),
-            ath_price: update.price.clone(), // upsert uses GREATEST
-            ..existing
-        },
+        Some(existing) => {
+            let ath_price = max_numeric_str(&existing.ath_price, &update.price);
+            market_ctrl::MarketDataRow {
+                token_price: update.price.clone(),
+                native_price: update.price.clone(),
+                ath_price,
+                ..existing
+            }
+        }
         None => market_ctrl::MarketDataRow {
             token_id: update.token_id.clone(),
             market_type: "DEX".to_string(),

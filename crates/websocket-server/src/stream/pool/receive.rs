@@ -39,12 +39,13 @@ fn handle_liquidity_allocated(
     producers: &Arc<EventProducers>,
 ) {
     let token = format!("{:#x}", event.token);
-    let pool = format!("{:#x}", event.pool);
+    let pool_id = format!("{:#x}", event.poolId);
 
     let data = serde_json::json!({
         "type": "LIQUIDITY_ALLOCATED",
         "token": token,
-        "pool": pool,
+        "pool_id": pool_id,
+        "token_is_currency0": event.tokenIsCurrency0,
         "token_amount": event.tokenAmount.to_string(),
         "tick_lower": event.tickLower,
         "tick_upper": event.tickUpper,
@@ -64,7 +65,7 @@ fn handle_liquidity_allocated(
         data,
     });
 
-    tracing::info!(token = %token, pool = %pool, "LiquidityAllocated event forwarded");
+    tracing::info!(token = %token, pool_id = %pool_id, "LiquidityAllocated event forwarded");
 }
 
 fn handle_fees_collected(

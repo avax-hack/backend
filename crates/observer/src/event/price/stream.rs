@@ -25,7 +25,7 @@ pub async fn derive_price_updates(
     let mut updates = Vec::new();
 
     for swap in &swap_batch.events {
-        if let Some((token_id, is_token0)) = pool_token_map.get(&swap.pool) {
+        if let Some((token_id, is_token0)) = pool_token_map.get(&swap.pool_id) {
             let (native_amount, token_amount) = extract_amounts(swap, *is_token0);
             let price = compute_price_from_amounts(&native_amount, &token_amount);
 
@@ -39,16 +39,16 @@ pub async fn derive_price_updates(
         }
     }
 
-    if !updates.is_empty() {
-        let batch = EventBatch::new(
-            updates,
-            swap_batch.from_block,
-            swap_batch.to_block,
-        );
-        tx.send(batch)
-            .await
-            .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Price channel send failed: {e}")))?;
-    }
+    // Always send the batch (even if empty) so the receive side can
+    // call mark_completed and advance its block progress cursor.
+    let batch = EventBatch::new(
+        updates,
+        swap_batch.from_block,
+        swap_batch.to_block,
+    );
+    tx.send(batch)
+        .await
+        .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Price channel send failed: {e}")))?;
 
     Ok(())
 }
@@ -64,13 +64,20 @@ fn extract_amounts(swap: &RawSwapEvent, is_token0: bool) -> (String, String) {
     }
 }
 
+/// Compute price as native_amount / token_amount, adjusted for decimal difference.
+/// The "native" side is USDC (6 decimals) and tokens have 18 decimals.
+/// price = (usdc / 1e6) / (tokens / 1e18) = usdc * 1e12 / tokens
+///
+/// Bug 43 fix: Align with the WS price computation which correctly accounts
+/// for the 12-decimal difference between USDC (6) and project tokens (18).
 fn compute_price_from_amounts(native_amount: &str, token_amount: &str) -> String {
     let native: f64 = native_amount.parse().unwrap_or(0.0);
     let token: f64 = token_amount.parse().unwrap_or(1.0);
     if token == 0.0 {
         return "0".to_string();
     }
-    format!("{:.18}", native / token)
+    let price = (native * 1e12) / token;
+    format!("{price:.18}")
 }
 
 #[cfg(test)]
@@ -79,14 +86,14 @@ mod tests {
 
     fn make_swap(amount0: &str, amount1: &str) -> RawSwapEvent {
         RawSwapEvent {
-            pool: "0xpool".to_string(),
+            pool_id: "0xpool".to_string(),
             sender: "0xsender".to_string(),
-            recipient: "0xrecipient".to_string(),
             amount0: amount0.to_string(),
             amount1: amount1.to_string(),
             sqrt_price_x96: "0".to_string(),
             liquidity: "0".to_string(),
             tick: 0,
+            fee: 0,
             block_number: 1,
             tx_hash: "0xtx".to_string(),
         }
@@ -140,9 +147,11 @@ mod tests {
 
     #[test]
     fn compute_price_normal_case() {
+        // 500 USDC-units / 1000 token-units with 1e12 decimal adjustment
+        // = (500 * 1e12) / 1000 = 5e11
         let price = compute_price_from_amounts("500", "1000");
         let parsed: f64 = price.parse().unwrap();
-        assert!((parsed - 0.5).abs() < 1e-10);
+        assert!((parsed - 5e11).abs() < 1e2);
     }
 
     #[test]
@@ -155,22 +164,23 @@ mod tests {
     fn compute_price_zero_native_returns_zero() {
         let price = compute_price_from_amounts("0", "100");
         let parsed: f64 = price.parse().unwrap();
-        assert!(parsed.abs() < 1e-18);
+        assert!(parsed.abs() < 1e-6);
     }
 
     #[test]
     fn compute_price_unparseable_native_defaults_zero() {
         let price = compute_price_from_amounts("bad", "100");
         let parsed: f64 = price.parse().unwrap();
-        assert!(parsed.abs() < 1e-18);
+        assert!(parsed.abs() < 1e-6);
     }
 
     #[test]
     fn compute_price_unparseable_token_defaults_one() {
         // token defaults to 1.0 when unparseable
+        // 42 * 1e12 / 1.0 = 42e12
         let price = compute_price_from_amounts("42", "bad");
         let parsed: f64 = price.parse().unwrap();
-        assert!((parsed - 42.0).abs() < 1e-10);
+        assert!((parsed - 42e12).abs() < 1e3);
     }
 
     #[test]

@@ -62,12 +62,12 @@ pub async fn poll_ido_events(
         "Polled IDO events"
     );
 
-    if !events.is_empty() {
-        let batch = EventBatch::new(events, range.from_block, range.to_block);
-        tx.send(batch)
-            .await
-            .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
-    }
+    // Always send the batch (even if empty) so the receive side can
+    // call mark_completed and advance its block progress cursor.
+    let batch = EventBatch::new(events, range.from_block, range.to_block);
+    tx.send(batch)
+        .await
+        .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
 
     Ok(())
 }

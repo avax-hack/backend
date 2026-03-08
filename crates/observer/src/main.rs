@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
     // Create mpsc channels
     let (ido_tx, mut ido_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
     let (_token_tx, mut token_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
-    let (_swap_tx, mut swap_rx) = tokio::sync::mpsc::channel::<EventBatch<RawSwapEvent>>(128);
+    let (swap_tx, mut swap_rx) = tokio::sync::mpsc::channel::<EventBatch<RawSwapEvent>>(128);
     let (lp_tx, mut lp_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
     let (_price_tx, mut price_rx) = tokio::sync::mpsc::channel::<EventBatch<PriceUpdate>>(128);
 
@@ -88,10 +88,9 @@ async fn main() -> anyhow::Result<()> {
     {
         let rpc = Arc::clone(&rpc);
         let stream_mgr = Arc::clone(&stream_mgr);
-        let db = Arc::clone(&db);
         let tx = ido_tx.clone();
         join_set.spawn(async move {
-            run_ido_stream(&rpc, &stream_mgr, &db, &tx).await
+            run_ido_stream(&rpc, &stream_mgr, &tx).await
         });
     }
 
@@ -114,10 +113,9 @@ async fn main() -> anyhow::Result<()> {
     {
         let rpc = Arc::clone(&rpc);
         let stream_mgr = Arc::clone(&stream_mgr);
-        let db = Arc::clone(&db);
         let tx = lp_tx.clone();
         join_set.spawn(async move {
-            run_lp_stream(&rpc, &stream_mgr, &db, &tx).await
+            run_lp_stream(&rpc, &stream_mgr, &tx).await
         });
     }
 
@@ -133,6 +131,16 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
+        });
+    }
+
+    // Spawn Swap stream (from PoolManager)
+    {
+        let rpc = Arc::clone(&rpc);
+        let stream_mgr = Arc::clone(&stream_mgr);
+        let tx = swap_tx.clone();
+        join_set.spawn(async move {
+            run_swap_stream(&rpc, &stream_mgr, &tx).await
         });
     }
 
@@ -156,7 +164,20 @@ async fn main() -> anyhow::Result<()> {
         let db = Arc::clone(&db);
         let receive_mgr = Arc::clone(&receive_mgr);
         join_set.spawn(async move {
-            let mappings = vec![]; // Populated from DB once pools are created
+            // Load pool mappings from DB (populated by LiquidityAllocated events)
+            let rows = controller::lp::load_pool_mappings(db.writer())
+                .await
+                .unwrap_or_default();
+            let mappings: Vec<event::swap::receive::PoolTokenMapping> = rows
+                .into_iter()
+                .map(|r| event::swap::receive::PoolTokenMapping {
+                    pool_id: r.pool_id,
+                    token_id: r.token_id,
+                    is_token0: r.is_token0,
+                })
+                .collect();
+            tracing::info!(count = mappings.len(), "Loaded pool mappings for swap filtering");
+
             event::swap::receive::process_swap_events(
                 db.writer(),
                 &mut swap_rx,
@@ -184,27 +205,38 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Spawn block progress persister
+    // Persists the MINIMUM of stream and receive progress for each event type,
+    // ensuring we only record blocks that have been fully processed on both sides.
     {
         let db = Arc::clone(&db);
         let stream_mgr = Arc::clone(&stream_mgr);
+        let receive_mgr_persist = Arc::clone(&receive_mgr);
         join_set.spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 for event_type in EventType::all() {
-                    if let Some(block) = stream_mgr.current_block(*event_type) {
-                        if let Err(e) = block_ctrl::set_last_block(
-                            db.writer(),
-                            event_type.as_str(),
-                            block as i64,
-                        )
-                        .await
-                        {
-                            tracing::error!(
-                                event_type = event_type.as_str(),
-                                error = %e,
-                                "Failed to persist block progress"
-                            );
-                        }
+                    let stream_block = stream_mgr.current_block(*event_type);
+                    let receive_block = receive_mgr_persist.completed_block(*event_type);
+
+                    let safe_block = match (stream_block, receive_block) {
+                        (Some(s), Some(r)) => s.min(r),
+                        (Some(s), None) => s,
+                        (None, Some(r)) => r,
+                        (None, None) => continue,
+                    };
+
+                    if let Err(e) = block_ctrl::set_last_block(
+                        db.writer(),
+                        event_type.as_str(),
+                        safe_block as i64,
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            event_type = event_type.as_str(),
+                            error = %e,
+                            "Failed to persist block progress"
+                        );
                     }
                 }
             }
@@ -216,23 +248,30 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Shutdown signal received");
+            Ok(())
         }
         Some(result) = join_set.join_next() => {
             match result {
-                Ok(Ok(())) => tracing::info!("A task completed normally"),
-                Ok(Err(e)) => tracing::error!(error = %e, "A task failed"),
-                Err(e) => tracing::error!(error = %e, "A task panicked"),
+                Ok(Ok(())) => {
+                    tracing::info!("A task completed unexpectedly");
+                    Err(anyhow::anyhow!("A task exited unexpectedly without error"))
+                }
+                Ok(Err(e)) => {
+                    tracing::error!(error = %e, "A task failed with error");
+                    Err(anyhow::anyhow!("Task failed: {e}"))
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "A task panicked");
+                    Err(anyhow::anyhow!("Task panicked: {e}"))
+                }
             }
         }
     }
-
-    Ok(())
 }
 
 async fn run_ido_stream(
     rpc: &Arc<RpcClient>,
     stream_mgr: &Arc<StreamManager>,
-    db: &Arc<PostgresDatabase>,
     tx: &tokio::sync::mpsc::Sender<EventBatch<OnChainEvent>>,
 ) -> anyhow::Result<()> {
     let poll_interval = Duration::from_millis(*config_local::POLL_INTERVAL_MS);
@@ -256,14 +295,13 @@ async fn run_ido_stream(
         })
         .await;
 
-        handle_stream_result("ido_stream", EventType::Ido, &result, &range, stream_mgr, db).await;
+        handle_stream_result("ido_stream", EventType::Ido, &result, &range, stream_mgr).await;
     }
 }
 
 async fn run_lp_stream(
     rpc: &Arc<RpcClient>,
     stream_mgr: &Arc<StreamManager>,
-    db: &Arc<PostgresDatabase>,
     tx: &tokio::sync::mpsc::Sender<EventBatch<OnChainEvent>>,
 ) -> anyhow::Result<()> {
     let poll_interval = Duration::from_millis(*config_local::POLL_INTERVAL_MS);
@@ -287,7 +325,37 @@ async fn run_lp_stream(
         })
         .await;
 
-        handle_stream_result("lp_stream", EventType::Lp, &result, &range, stream_mgr, db).await;
+        handle_stream_result("lp_stream", EventType::Lp, &result, &range, stream_mgr).await;
+    }
+}
+
+async fn run_swap_stream(
+    rpc: &Arc<RpcClient>,
+    stream_mgr: &Arc<StreamManager>,
+    tx: &tokio::sync::mpsc::Sender<EventBatch<RawSwapEvent>>,
+) -> anyhow::Result<()> {
+    let poll_interval = Duration::from_millis(*config_local::POLL_INTERVAL_MS);
+    let retry_config = RetryConfig::default();
+
+    loop {
+        tokio::time::sleep(poll_interval).await;
+
+        let latest_block = rpc.latest_block();
+        if latest_block == 0 {
+            continue;
+        }
+
+        let range = match stream_mgr.get_range(EventType::Swap, latest_block) {
+            Some(r) => r,
+            None => continue,
+        };
+
+        let result = run_event_handler_with_retry("swap_stream", &retry_config, || {
+            event::swap::stream::poll_swap_events(rpc, &range, tx)
+        })
+        .await;
+
+        handle_stream_result("swap_stream", EventType::Swap, &result, &range, stream_mgr).await;
     }
 }
 
@@ -297,24 +365,12 @@ async fn handle_stream_result(
     result: &Result<(), event::error::ObserverError>,
     range: &sync::stream::BlockRange,
     stream_mgr: &Arc<StreamManager>,
-    db: &Arc<PostgresDatabase>,
 ) {
     match result {
         Ok(()) => {
             stream_mgr.advance(event_type, range.to_block);
-            if let Err(e) = block_ctrl::set_last_block(
-                db.writer(),
-                event_type.as_str(),
-                range.to_block as i64,
-            )
-            .await
-            {
-                tracing::error!(
-                    handler = name,
-                    error = %e,
-                    "Failed to persist block progress"
-                );
-            }
+            // Block progress is persisted by the periodic persister task,
+            // which writes the minimum of stream and receive progress.
         }
         Err(e) => {
             tracing::error!(handler = name, error = %e, "Stream handler error");

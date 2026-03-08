@@ -61,12 +61,12 @@ pub async fn poll_lp_events(
         "Polled LP events"
     );
 
-    if !events.is_empty() {
-        let batch = EventBatch::new(events, range.from_block, range.to_block);
-        tx.send(batch)
-            .await
-            .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
-    }
+    // Always send the batch (even if empty) so the receive side can
+    // call mark_completed and advance its block progress cursor.
+    let batch = EventBatch::new(events, range.from_block, range.to_block);
+    tx.send(batch)
+        .await
+        .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
 
     Ok(())
 }
@@ -81,7 +81,8 @@ fn try_decode_lp_log(
         let e = &decoded.inner;
         return Some(OnChainEvent::LiquidityAllocated(LiquidityAllocatedEvent {
             token: format!("{:#x}", e.token),
-            pool: format!("{:#x}", e.pool),
+            pool_id: format!("{:#x}", e.poolId),
+            token_is_currency0: e.tokenIsCurrency0,
             token_amount: e.tokenAmount.to_string(),
             tick_lower: e.tickLower.as_i32(),
             tick_upper: e.tickUpper.as_i32(),

@@ -27,6 +27,10 @@ lazy_static! {
         std::env::var("IDO_CONTRACT").expect("IDO_CONTRACT required");
     pub static ref LP_MANAGER_CONTRACT: String =
         std::env::var("LP_MANAGER_CONTRACT").expect("LP_MANAGER_CONTRACT required");
+    pub static ref POOL_MANAGER_CONTRACT: String =
+        std::env::var("POOL_MANAGER_CONTRACT").expect("POOL_MANAGER_CONTRACT required");
+    pub static ref SWAP_FEE_HOOK: String =
+        std::env::var("SWAP_FEE_HOOK").expect("SWAP_FEE_HOOK required");
     pub static ref USDC_ADDRESS: String =
         std::env::var("USDC_ADDRESS").expect("USDC_ADDRESS required");
 

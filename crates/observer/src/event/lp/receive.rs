@@ -45,10 +45,12 @@ async fn handle_lp_event(pool: &PgPool, event: &OnChainEvent) -> Result<(), Obse
     match event {
         OnChainEvent::LiquidityAllocated(e) => {
             let now = current_unix_timestamp();
+
+            // Store liquidity position
             lp_ctrl::insert_liquidity_position(
                 pool,
                 &e.token,
-                &e.pool,
+                &e.pool_id,
                 e.tick_lower,
                 e.tick_upper,
                 &e.token_amount,
@@ -57,10 +59,22 @@ async fn handle_lp_event(pool: &PgPool, event: &OnChainEvent) -> Result<(), Obse
             .await
             .map_err(|err| ObserverError::retriable(err))?;
 
+            // Store pool → token mapping for swap event filtering
+            lp_ctrl::insert_pool_mapping(
+                pool,
+                &e.pool_id,
+                &e.token,
+                e.token_is_currency0,
+                now,
+            )
+            .await
+            .map_err(|err| ObserverError::retriable(err))?;
+
             tracing::info!(
                 token = %e.token,
-                pool = %e.pool,
-                "LiquidityAllocated processed"
+                pool_id = %e.pool_id,
+                is_currency0 = %e.token_is_currency0,
+                "LiquidityAllocated processed, pool mapping stored"
             );
             Ok(())
         }

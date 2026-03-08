@@ -103,21 +103,36 @@ async fn update_balance_subtract(
     token_id: &str,
     amount: &str,
 ) -> Result<(), ObserverError> {
-    sqlx::query(
+    // Use a proper UPSERT: on INSERT (new account) clamp to 0 since we cannot
+    // subtract from a balance that does not exist yet; on UPDATE subtract and clamp.
+    let result = sqlx::query_scalar::<_, bool>(
         r#"
-        INSERT INTO balances (account_id, token_id, balance, updated_at)
-        VALUES ($1, $2, 0, EXTRACT(EPOCH FROM NOW())::BIGINT)
-        ON CONFLICT (account_id, token_id) DO UPDATE SET
-            balance = GREATEST(balances.balance - $3::NUMERIC, 0),
-            updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+        WITH upsert AS (
+            INSERT INTO balances (account_id, token_id, balance, updated_at)
+            VALUES ($1, $2, 0, EXTRACT(EPOCH FROM NOW())::BIGINT)
+            ON CONFLICT (account_id, token_id) DO UPDATE SET
+                balance = GREATEST(balances.balance - $3::NUMERIC, 0),
+                updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+            RETURNING (xmax = 0) AS is_insert
+        )
+        SELECT is_insert FROM upsert
         "#,
     )
     .bind(account_id)
     .bind(token_id)
     .bind(amount)
-    .execute(pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| ObserverError::retriable(anyhow::anyhow!("Balance subtract failed: {e}")))?;
+
+    if result {
+        tracing::warn!(
+            account_id = %account_id,
+            token_id = %token_id,
+            amount = %amount,
+            "Subtract on unknown account: inserted with 0 balance (no prior balance record)"
+        );
+    }
 
     Ok(())
 }

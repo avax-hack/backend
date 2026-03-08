@@ -32,6 +32,47 @@ pub async fn insert_liquidity_position(
     Ok(())
 }
 
+/// Insert a pool → token mapping for swap event filtering.
+pub async fn insert_pool_mapping(
+    pool: &PgPool,
+    pool_id: &str,
+    token_id: &str,
+    is_token0: bool,
+    created_at: i64,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO pool_mappings (pool_id, token_id, is_token0, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (pool_id) DO NOTHING
+        "#,
+    )
+    .bind(pool_id)
+    .bind(token_id)
+    .bind(is_token0)
+    .bind(created_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Load all pool mappings from DB.
+pub async fn load_pool_mappings(pool: &PgPool) -> anyhow::Result<Vec<PoolMappingRow>> {
+    let rows = sqlx::query_as::<_, PoolMappingRow>(
+        "SELECT pool_id, token_id, is_token0 FROM pool_mappings",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct PoolMappingRow {
+    pub pool_id: String,
+    pub token_id: String,
+    pub is_token0: bool,
+}
+
 /// Insert a fee collection record from a FeesCollected event.
 pub async fn insert_fee_collection(
     pool: &PgPool,

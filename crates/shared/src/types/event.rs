@@ -75,7 +75,8 @@ pub struct RefundedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiquidityAllocatedEvent {
     pub token: String,
-    pub pool: String,
+    pub pool_id: String,
+    pub token_is_currency0: bool,
     pub token_amount: String,
     pub tick_lower: i32,
     pub tick_upper: i32,
@@ -205,7 +206,8 @@ mod tests {
     fn test_liquidity_allocated_event_serialization() {
         let event = LiquidityAllocatedEvent {
             token: "0xt".to_string(),
-            pool: "0xpool".to_string(),
+            pool_id: "0xpoolid".to_string(),
+            token_is_currency0: true,
             token_amount: "10000".to_string(),
             tick_lower: -887220,
             tick_upper: 887220,
@@ -216,6 +218,7 @@ mod tests {
         let parsed: LiquidityAllocatedEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.tick_lower, -887220);
         assert_eq!(parsed.tick_upper, 887220);
+        assert!(parsed.token_is_currency0);
     }
 
     #[test]

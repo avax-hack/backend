@@ -12,7 +12,7 @@ sol! {
         }
 
         // Events
-        event LiquidityAllocated(address indexed token, address indexed pool, uint256 tokenAmount, int24 tickLower, int24 tickUpper);
+        event LiquidityAllocated(address indexed token, bytes32 indexed poolId, bool tokenIsCurrency0, uint256 tokenAmount, int24 tickLower, int24 tickUpper);
         event FeesCollected(address indexed token, uint256 amount0, uint256 amount1);
 
         // Errors

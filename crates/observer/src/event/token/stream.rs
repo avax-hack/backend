@@ -58,7 +58,7 @@ pub async fn poll_token_events(
         if let Ok(decoded) = log.log_decode::<IProjectToken::Transfer>() {
             let e = &decoded.inner;
             events.push(OnChainEvent::Transfer(TransferEvent {
-                token: format!("{:#x}", decoded.inner.address),
+                token: format!("{:#x}", log.inner.address),
                 from: format!("{:#x}", e.from),
                 to: format!("{:#x}", e.to),
                 amount: e.value.to_string(),
@@ -75,12 +75,12 @@ pub async fn poll_token_events(
         "Polled Token Transfer events"
     );
 
-    if !events.is_empty() {
-        let batch = EventBatch::new(events, range.from_block, range.to_block);
-        tx.send(batch)
-            .await
-            .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
-    }
+    // Always send the batch (even if empty) so the receive side can
+    // call mark_completed and advance its block progress cursor.
+    let batch = EventBatch::new(events, range.from_block, range.to_block);
+    tx.send(batch)
+        .await
+        .map_err(|e| ObserverError::fatal(anyhow::anyhow!("Channel send failed: {e}")))?;
 
     Ok(())
 }
