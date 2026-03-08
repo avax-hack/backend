@@ -200,15 +200,18 @@ fn parse_swap_amounts(event: &RawSwapEvent, is_token0: bool) -> (String, String,
     let amount0: i128 = event.amount0.parse().unwrap_or(0);
     let amount1: i128 = event.amount1.parse().unwrap_or(0);
 
+    // Uniswap V4 sign convention (from Pool.sol):
+    //   amount > 0 → user RECEIVES (gains) that token
+    //   amount < 0 → user SENDS (pays) that token
     if is_token0 {
         let token_amount = amount0.unsigned_abs().to_string();
         let native_amount = amount1.unsigned_abs().to_string();
-        let event_type = if amount0 > 0 { "SELL" } else { "BUY" };
+        let event_type = if amount0 > 0 { "BUY" } else { "SELL" };
         (native_amount, token_amount, event_type.to_string())
     } else {
         let token_amount = amount1.unsigned_abs().to_string();
         let native_amount = amount0.unsigned_abs().to_string();
-        let event_type = if amount1 > 0 { "SELL" } else { "BUY" };
+        let event_type = if amount1 > 0 { "BUY" } else { "SELL" };
         (native_amount, token_amount, event_type.to_string())
     }
 }
