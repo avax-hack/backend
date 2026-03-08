@@ -43,6 +43,9 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 
 # Utilities
 uuid = { version = "1.11", features = ["v4"] }
+aws-sdk-s3 = "1"
+aws-config = "1"
+aws-credential-types = "1"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 sha2 = "0.10"

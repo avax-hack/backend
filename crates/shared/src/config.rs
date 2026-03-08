@@ -52,4 +52,20 @@ lazy_static! {
     pub static ref PG_REPLICA_MIN_CONNECTIONS: u32 =
         std::env::var("PG_REPLICA_MIN_CONNECTIONS").unwrap_or_else(|_| "10".to_string())
             .parse().unwrap_or(10);
+
+    // R2 Storage
+    pub static ref R2_ACCOUNT_ID: String =
+        std::env::var("R2_ACCOUNT_ID").unwrap_or_default();
+    pub static ref R2_ACCESS_KEY_ID: String =
+        std::env::var("R2_ACCESS_KEY_ID").unwrap_or_default();
+    pub static ref R2_SECRET_ACCESS_KEY: String =
+        std::env::var("R2_SECRET_ACCESS_KEY").unwrap_or_default();
+    pub static ref R2_IMAGE_BUCKET: String =
+        std::env::var("R2_IMAGE_BUCKET").unwrap_or_else(|_| "openlaunch-image".to_string());
+    pub static ref R2_METADATA_BUCKET: String =
+        std::env::var("R2_METADATA_BUCKET").unwrap_or_else(|_| "openlaunch-metadata".to_string());
+    pub static ref R2_IMAGE_PUBLIC_URL: String =
+        std::env::var("R2_IMAGE_PUBLIC_URL").unwrap_or_default();
+    pub static ref R2_METADATA_PUBLIC_URL: String =
+        std::env::var("R2_METADATA_PUBLIC_URL").unwrap_or_default();
 }
