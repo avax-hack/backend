@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 use openlaunch_shared::db::postgres::controller::{
-    account as account_ctrl, investment as investment_ctrl, milestone as milestone_ctrl,
-    refund as refund_ctrl,
+    account as account_ctrl, investment as investment_ctrl, market as market_ctrl,
+    milestone as milestone_ctrl, refund as refund_ctrl,
 };
 use openlaunch_shared::types::common::current_unix_timestamp;
 use openlaunch_shared::types::event::OnChainEvent;
@@ -90,8 +90,46 @@ async fn handle_project_created(
     .await
     .map_err(|err| ObserverError::retriable(err))?;
 
-    // Insert default milestones (the on-chain event doesn't carry milestone details,
-    // so we create placeholder milestones that will be enriched via the API later).
+    // Create initial market_data row with total_supply and token_price
+    use openlaunch_shared::utils::price::wei_to_display;
+    let price_display = wei_to_display(&e.token_price, 6).unwrap_or_else(|_| "0".to_string());
+    let initial_market = market_ctrl::MarketDataRow {
+        token_id: e.token.clone(),
+        market_type: "IDO".to_string(),
+        token_price: price_display.clone(),
+        native_price: price_display.clone(),
+        ath_price: price_display,
+        total_supply: "1000000000".to_string(),
+        volume_24h: "0".to_string(),
+        holder_count: 0,
+        bonding_percent: "0".to_string(),
+        milestone_completed: 0,
+        milestone_total: 0,
+        is_graduated: false,
+    };
+    market_ctrl::upsert(pool, &initial_market)
+        .await
+        .map_err(|err| ObserverError::retriable(err))?;
+
+    // Fetch metadata from token_uri to extract milestones
+    if !e.token_uri.is_empty() {
+        match fetch_and_insert_milestones(pool, &e.token, &e.token_uri).await {
+            Ok(count) => {
+                // Update milestone_total in market_data
+                if let Ok(Some(existing)) = market_ctrl::find_by_token(pool, &e.token).await {
+                    let updated = market_ctrl::MarketDataRow {
+                        milestone_total: count,
+                        ..existing
+                    };
+                    let _ = market_ctrl::upsert(pool, &updated).await;
+                }
+            }
+            Err(err) => {
+                tracing::warn!(token = %e.token, error = %err, "Failed to fetch milestones from metadata");
+            }
+        }
+    }
+
     tracing::info!(
         token = %e.token,
         creator = %e.creator,
@@ -137,6 +175,11 @@ async fn handle_tokens_purchased(
 
     // Update project usdc_raised (raw value, add_usdc_raised normalizes internally)
     project_ctrl::add_usdc_raised(pool, &e.token, &e.usdc_amount)
+        .await
+        .map_err(|err| ObserverError::retriable(err))?;
+
+    // Update holder_count in market_data
+    market_ctrl::refresh_holder_count(pool, &e.token)
         .await
         .map_err(|err| ObserverError::retriable(err))?;
 
@@ -233,4 +276,36 @@ async fn handle_refunded(
         "Refunded processed"
     );
     Ok(())
+}
+
+/// Fetch metadata JSON from token_uri and insert milestones into DB.
+/// Returns the number of milestones inserted.
+async fn fetch_and_insert_milestones(
+    pool: &PgPool,
+    token_id: &str,
+    token_uri: &str,
+) -> anyhow::Result<i32> {
+    let resp = reqwest::get(token_uri).await?;
+    let body: serde_json::Value = resp.json().await?;
+
+    let milestones = body["milestones"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("No milestones array in metadata"))?;
+
+    let batch: Vec<(i32, String, String, i32)> = milestones
+        .iter()
+        .map(|m| {
+            let order = m["order"].as_i64().unwrap_or(0) as i32;
+            let title = m["title"].as_str().unwrap_or("").to_string();
+            let description = m["description"].as_str().unwrap_or("").to_string();
+            let alloc = m["fund_allocation_percent"].as_i64().unwrap_or(0) as i32;
+            (order, title, description, alloc)
+        })
+        .collect();
+
+    let count = batch.len() as i32;
+    milestone_ctrl::insert_batch(pool, token_id, &batch).await?;
+
+    tracing::info!(token = %token_id, count, "Milestones inserted from metadata");
+    Ok(count)
 }

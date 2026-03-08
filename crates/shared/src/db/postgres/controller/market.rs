@@ -60,6 +60,42 @@ pub async fn find_by_token(pool: &PgPool, token_id: &str) -> anyhow::Result<Opti
     Ok(row)
 }
 
+/// Add volume to the existing volume_24h for a token.
+pub async fn add_volume(pool: &PgPool, token_id: &str, volume: &str) -> anyhow::Result<()> {
+    let now = crate::types::common::current_unix_timestamp();
+    sqlx::query(
+        r#"
+        UPDATE market_data
+        SET volume_24h = volume_24h + $2::NUMERIC, updated_at = $3
+        WHERE token_id = $1
+        "#,
+    )
+    .bind(token_id)
+    .bind(volume)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Update holder_count from the balances table (count of accounts with balance > 0).
+pub async fn refresh_holder_count(pool: &PgPool, token_id: &str) -> anyhow::Result<()> {
+    let now = crate::types::common::current_unix_timestamp();
+    sqlx::query(
+        r#"
+        UPDATE market_data
+        SET holder_count = (SELECT COUNT(*) FROM balances WHERE token_id = $1 AND balance > 0),
+            updated_at = $2
+        WHERE token_id = $1
+        "#,
+    )
+    .bind(token_id)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn set_graduated(pool: &PgPool, token_id: &str) -> anyhow::Result<()> {
     let now = crate::types::common::current_unix_timestamp();
     sqlx::query(

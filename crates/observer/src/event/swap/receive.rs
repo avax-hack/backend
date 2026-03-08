@@ -179,6 +179,13 @@ async fn handle_swap(
             })?;
     }
 
+    // Accumulate volume
+    market_ctrl::add_volume(pool, &mapping.token_id, &value)
+        .await
+        .map_err(|e| {
+            ObserverError::retriable(anyhow::anyhow!("Volume update failed: {e}"))
+        })?;
+
     tracing::debug!(
         token = %mapping.token_id,
         event_type = %event_type,
