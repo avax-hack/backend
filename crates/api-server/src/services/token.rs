@@ -20,6 +20,8 @@ pub async fn get_token(
     db: &Arc<PostgresDatabase>,
     token_id: &str,
 ) -> AppResult<ITokenData> {
+    let token_id = token_id.to_lowercase();
+    let token_id = token_id.as_str();
     let project_row = project::find_by_id(db.reader(), token_id)
         .await
         .map_err(AppError::Internal)?
