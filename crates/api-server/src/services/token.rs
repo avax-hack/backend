@@ -49,7 +49,7 @@ pub async fn get_token_list(
     sort_type: &str,
     pagination: &PaginationParams,
 ) -> AppResult<PaginatedResponse<TokenListItem>> {
-    get_token_list_filtered(db, sort_type, pagination, None, None, false).await
+    get_token_list_filtered(db, sort_type, pagination, None, None, false, None).await
 }
 
 /// Get sorted/paginated/filtered token list.
@@ -60,9 +60,10 @@ pub async fn get_token_list_filtered(
     category: Option<&str>,
     search: Option<&str>,
     verified_only: bool,
+    status: Option<&str>,
 ) -> AppResult<PaginatedResponse<TokenListItem>> {
     let (rows, total_count) = project::find_list_filtered(
-        db.reader(), sort_type, pagination, None, category, search, verified_only,
+        db.reader(), sort_type, pagination, status, category, search, verified_only,
     )
     .await
     .map_err(AppError::Internal)?;

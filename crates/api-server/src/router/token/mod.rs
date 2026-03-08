@@ -115,6 +115,8 @@ pub(crate) struct TokenListQuery {
     verified_only: Option<bool>,
     #[serde(default)]
     search: Option<String>,
+    #[serde(default)]
+    is_ido: Option<bool>,
 }
 
 #[utoipa::path(
@@ -128,6 +130,7 @@ pub(crate) struct TokenListQuery {
         ("category" = Option<String>, Query, description = "Category filter"),
         ("verified_only" = Option<bool>, Query, description = "Show only verified tokens"),
         ("search" = Option<String>, Query, description = "Search query"),
+        ("is_ido" = Option<bool>, Query, description = "Filter by IDO status: true=funding, false=graduated"),
     ),
     responses(
         (status = 200, description = "Paginated token list", body = serde_json::Value)
@@ -139,17 +142,24 @@ pub async fn get_token_list(
     Query(query): Query<TokenListQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
     let verified = query.verified_only.unwrap_or(false);
+    let status_filter = match query.is_ido {
+        Some(true) => Some("funding"),
+        Some(false) => Some("active"),
+        None => None,
+    };
     let pagination = PaginationParams {
         page: query.page,
         limit: query.limit,
     };
     let cache_key = format!(
-        "token_list:{sort_type}:{}:{}:{}:{}:{}",
+        "token_list|{}|{}|{}|{}|{}|{}|{}",
+        sort_type,
         pagination.page,
         pagination.limit,
         query.category.as_deref().unwrap_or(""),
         verified,
         query.search.as_deref().unwrap_or(""),
+        query.is_ido.map(|v| v.to_string()).unwrap_or_default(),
     );
 
     let cat = query.category.clone();
@@ -163,9 +173,10 @@ pub async fn get_token_list(
             let p = pagination.clone();
             let c = cat.clone();
             let s = search.clone();
+            let sf = status_filter.map(|s| s.to_string());
             async move {
                 let data = token_service::get_token_list_filtered(
-                    &db, &st, &p, c.as_deref(), s.as_deref(), verified,
+                    &db, &st, &p, c.as_deref(), s.as_deref(), verified, sf.as_deref(),
                 ).await?;
                 Ok(serde_json::to_value(data)?)
             }
