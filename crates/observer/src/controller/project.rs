@@ -1,8 +1,12 @@
-use bigdecimal::BigDecimal;
 use sqlx::PgPool;
-use std::str::FromStr;
+
+use openlaunch_shared::utils::price::wei_to_display;
+
+const USDC_DECIMALS: u32 = 6;
+const TOKEN_DECIMALS: u32 = 18;
 
 /// Insert a new project from a ProjectCreated on-chain event.
+/// All numeric values are normalized from raw on-chain wei to human-readable strings.
 pub async fn insert_from_event(
     pool: &PgPool,
     project_id: &str,
@@ -17,9 +21,20 @@ pub async fn insert_from_event(
     tx_hash: &str,
     created_at: i64,
 ) -> anyhow::Result<()> {
-    let ido_amount = BigDecimal::from_str(ido_token_amount).unwrap_or_default();
-    let price = BigDecimal::from_str(token_price).unwrap_or_default();
-    let target_raise = (&ido_amount * &price).to_string();
+    let ido_display = wei_to_display(ido_token_amount, TOKEN_DECIMALS)?;
+    let price_display = wei_to_display(token_price, USDC_DECIMALS)?;
+    let total_supply_display = wei_to_display(total_supply, TOKEN_DECIMALS)?;
+
+    // target_raise (USDC) = ido_token_amount (token, 18 dec) * token_price (USDC, 6 dec)
+    // = raw_ido * raw_price / 10^(18+6) = raw_ido * raw_price / 10^24
+    let raw_product = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        let ido_bd = BigDecimal::from_str(ido_token_amount).unwrap_or_default();
+        let price_bd = BigDecimal::from_str(token_price).unwrap_or_default();
+        ido_bd * price_bd
+    };
+    let target_raise_display = wei_to_display(&raw_product.to_string(), TOKEN_DECIMALS + USDC_DECIMALS)?;
 
     sqlx::query(
         r#"
@@ -41,10 +56,10 @@ pub async fn insert_from_event(
     .bind(symbol)
     .bind(token_uri)
     .bind(creator)
-    .bind(&target_raise)
-    .bind(token_price)
-    .bind(ido_token_amount)
-    .bind(total_supply)
+    .bind(&target_raise_display)
+    .bind(&price_display)
+    .bind(&ido_display)
+    .bind(&total_supply_display)
     .bind(deadline)
     .bind(tx_hash)
     .bind(created_at)
@@ -54,11 +69,14 @@ pub async fn insert_from_event(
 }
 
 /// Update USDC raised for a project after a token purchase.
+/// `usdc_amount` is raw on-chain value (6 decimals), normalized before storing.
 pub async fn add_usdc_raised(
     pool: &PgPool,
     project_id: &str,
     usdc_amount: &str,
 ) -> anyhow::Result<()> {
+    let usdc_display = wei_to_display(usdc_amount, USDC_DECIMALS)?;
+
     sqlx::query(
         r#"
         UPDATE projects
@@ -67,7 +85,7 @@ pub async fn add_usdc_raised(
         "#,
     )
     .bind(project_id)
-    .bind(usdc_amount)
+    .bind(&usdc_display)
     .execute(pool)
     .await?;
     Ok(())

@@ -106,20 +106,28 @@ async fn handle_tokens_purchased(
     pool: &PgPool,
     e: &openlaunch_shared::types::event::TokensPurchasedEvent,
 ) -> Result<(), ObserverError> {
+    use openlaunch_shared::utils::price::wei_to_display;
+
     let now = current_unix_timestamp();
+
+    // Normalize raw on-chain values to human-readable strings
+    let usdc_display = wei_to_display(&e.usdc_amount, 6)
+        .map_err(|err| ObserverError::retriable(err))?;
+    let token_display = wei_to_display(&e.token_amount, 18)
+        .map_err(|err| ObserverError::retriable(err))?;
 
     // Upsert buyer account
     account_ctrl::upsert(pool, &e.buyer)
         .await
         .map_err(|err| ObserverError::retriable(err))?;
 
-    // Insert investment record
+    // Insert investment record (normalized values)
     investment_ctrl::insert(
         pool,
         &e.token,
         &e.buyer,
-        &e.usdc_amount,
-        &e.token_amount,
+        &usdc_display,
+        &token_display,
         &e.tx_hash,
         e.block_number as i64,
         now,
@@ -127,7 +135,7 @@ async fn handle_tokens_purchased(
     .await
     .map_err(|err| ObserverError::retriable(err))?;
 
-    // Update project usdc_raised
+    // Update project usdc_raised (raw value, add_usdc_raised normalizes internally)
     project_ctrl::add_usdc_raised(pool, &e.token, &e.usdc_amount)
         .await
         .map_err(|err| ObserverError::retriable(err))?;
@@ -193,14 +201,21 @@ async fn handle_refunded(
     pool: &PgPool,
     e: &openlaunch_shared::types::event::RefundedEvent,
 ) -> Result<(), ObserverError> {
+    use openlaunch_shared::utils::price::wei_to_display;
+
     let now = current_unix_timestamp();
+
+    let tokens_display = wei_to_display(&e.tokens_burned, 18)
+        .map_err(|err| ObserverError::retriable(err))?;
+    let usdc_display = wei_to_display(&e.usdc_returned, 6)
+        .map_err(|err| ObserverError::retriable(err))?;
 
     refund_ctrl::insert(
         pool,
         &e.token,
         &e.buyer,
-        &e.tokens_burned,
-        &e.usdc_returned,
+        &tokens_display,
+        &usdc_display,
         &e.tx_hash,
         e.block_number as i64,
         now,
