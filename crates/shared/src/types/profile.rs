@@ -109,7 +109,6 @@ mod tests {
             symbol: "TP".to_string(),
             image_uri: "img.png".to_string(),
             description: None,
-            tagline: "A test project".to_string(),
             category: "defi".to_string(),
             creator: IAccountInfo::new("0xcreator".to_string()),
             website: None,

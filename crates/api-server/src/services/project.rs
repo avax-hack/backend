@@ -140,14 +140,30 @@ pub async fn create_project(
         .parse()
         .map_err(|_| AppError::BadRequest("Invalid token_supply".to_string()))?;
 
-    project::insert(
-        db.writer(),
+    let milestones: Vec<(i32, String, String, i32)> = request
+        .milestones
+        .iter()
+        .map(|m| {
+            (
+                m.order,
+                m.title.clone(),
+                m.description.clone(),
+                m.fund_allocation_percent * 100, // convert to basis points
+            )
+        })
+        .collect();
+
+    // Wrap project + milestone creation in a single transaction
+    let mut tx = db.writer().begin().await.map_err(|e| AppError::Internal(e.into()))?;
+
+    project::insert_with_tx(
+        &mut tx,
         &project_id,
         &request.name,
         &request.symbol,
         &request.image_uri,
         Some(&request.description),
-        &request.tagline,
+        "",
         &request.category,
         creator,
         &target_raise_bd.to_string(),
@@ -163,22 +179,11 @@ pub async fn create_project(
     .await
     .map_err(AppError::Internal)?;
 
-    let milestones: Vec<(i32, String, String, i32)> = request
-        .milestones
-        .iter()
-        .map(|m| {
-            (
-                m.order,
-                m.title.clone(),
-                m.description.clone(),
-                m.fund_allocation_percent * 100, // convert to basis points
-            )
-        })
-        .collect();
-
-    milestone::insert_batch(db.writer(), &project_id, &milestones)
+    milestone::insert_batch_with_tx(&mut tx, &project_id, &milestones)
         .await
         .map_err(AppError::Internal)?;
+
+    tx.commit().await.map_err(|e| AppError::Internal(e.into()))?;
 
     Ok(project_id)
 }
@@ -231,7 +236,6 @@ fn build_project_info(
         symbol: row.symbol.clone(),
         image_uri: row.image_uri.clone(),
         description: row.description.clone(),
-        tagline: row.tagline.clone(),
         category: row.category.clone(),
         creator: creator.clone(),
         website: row.website.clone(),
@@ -276,7 +280,6 @@ async fn build_project_list_items(
             symbol: row.symbol.clone(),
             image_uri: row.image_uri.clone(),
             description: None,
-            tagline: row.tagline.clone(),
             category: row.category.clone(),
             creator,
             website: None,

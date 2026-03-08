@@ -41,7 +41,6 @@ pub struct IProjectInfo {
     pub symbol: String,
     pub image_uri: String,
     pub description: Option<String>,
-    pub tagline: String,
     pub category: String,
     pub creator: IAccountInfo,
     pub website: Option<String>,
@@ -80,7 +79,6 @@ pub struct IProjectListItem {
 pub struct CreateProjectRequest {
     pub name: String,
     pub symbol: String,
-    pub tagline: String,
     pub description: String,
     pub image_uri: String,
     pub category: String,
@@ -112,9 +110,6 @@ impl CreateProjectRequest {
         }
         if !self.symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
             anyhow::bail!("Symbol must be uppercase letters and digits only");
-        }
-        if self.tagline.len() < 5 || self.tagline.len() > 120 {
-            anyhow::bail!("Tagline must be 5-120 characters");
         }
         if self.description.len() < 20 {
             anyhow::bail!("Description must be at least 20 characters");
@@ -174,7 +169,7 @@ mod tests {
         let req = CreateProjectRequest {
             name: "TestProject".to_string(),
             symbol: "TEST".to_string(),
-            tagline: "A test project for testing".to_string(),
+
             description: "This is a test project with enough description length".to_string(),
             image_uri: "https://img.png".to_string(),
             category: "defi".to_string(),
@@ -208,7 +203,7 @@ mod tests {
         let req = CreateProjectRequest {
             name: "TestProject".to_string(),
             symbol: "test".to_string(), // lowercase
-            tagline: "A test project for testing".to_string(),
+
             description: "This is a test project with enough description length".to_string(),
             image_uri: "https://img.png".to_string(),
             category: "defi".to_string(),
@@ -232,7 +227,7 @@ mod tests {
         let req = CreateProjectRequest {
             name: "TestProject".to_string(),
             symbol: "TEST".to_string(),
-            tagline: "A test project for testing".to_string(),
+
             description: "This is a test project with enough description length".to_string(),
             image_uri: "https://img.png".to_string(),
             category: "defi".to_string(),
@@ -256,7 +251,7 @@ mod tests {
         CreateProjectRequest {
             name: "TestProject".to_string(),
             symbol: "TEST".to_string(),
-            tagline: "A test project for testing".to_string(),
+
             description: "This is a test project with enough description length".to_string(),
             image_uri: "https://img.png".to_string(),
             category: "defi".to_string(),
@@ -301,20 +296,6 @@ mod tests {
     fn test_create_project_validation_symbol_too_long() {
         let mut req = valid_request();
         req.symbol = "ABCDEFGHIJK".to_string(); // 11 chars
-        assert!(req.validate().is_err());
-    }
-
-    #[test]
-    fn test_create_project_validation_tagline_too_short() {
-        let mut req = valid_request();
-        req.tagline = "Hi".to_string();
-        assert!(req.validate().is_err());
-    }
-
-    #[test]
-    fn test_create_project_validation_tagline_too_long() {
-        let mut req = valid_request();
-        req.tagline = "A".repeat(121);
         assert!(req.validate().is_err());
     }
 
@@ -434,7 +415,6 @@ mod tests {
                 symbol: "P".to_string(),
                 image_uri: "i.png".to_string(),
                 description: None,
-                tagline: "Tag".to_string(),
                 category: "defi".to_string(),
                 creator: super::super::account::IAccountInfo::new("0x1".to_string()),
                 website: None,
@@ -536,36 +516,6 @@ mod tests {
         req.symbol = "ABCDEFGHIJK".to_string(); // 11 chars
         let err = req.validate().unwrap_err();
         assert!(err.to_string().contains("Symbol must be 2-10 characters"));
-    }
-
-    #[test]
-    fn test_tagline_exactly_5_chars_valid() {
-        let mut req = valid_request();
-        req.tagline = "Hello".to_string(); // 5 chars
-        assert!(req.validate().is_ok());
-    }
-
-    #[test]
-    fn test_tagline_exactly_120_chars_valid() {
-        let mut req = valid_request();
-        req.tagline = "A".repeat(120);
-        assert!(req.validate().is_ok());
-    }
-
-    #[test]
-    fn test_tagline_4_chars_invalid() {
-        let mut req = valid_request();
-        req.tagline = "Abcd".to_string(); // 4 chars
-        let err = req.validate().unwrap_err();
-        assert!(err.to_string().contains("Tagline must be 5-120 characters"));
-    }
-
-    #[test]
-    fn test_tagline_121_chars_invalid() {
-        let mut req = valid_request();
-        req.tagline = "A".repeat(121);
-        let err = req.validate().unwrap_err();
-        assert!(err.to_string().contains("Tagline must be 5-120 characters"));
     }
 
     #[test]
