@@ -14,6 +14,7 @@ pub async fn upsert(pool: &PgPool, data: &MarketDataRow) -> anyhow::Result<()> {
             token_price = $3::NUMERIC,
             native_price = $4::NUMERIC,
             ath_price = GREATEST(market_data.ath_price, $5::NUMERIC),
+            total_supply = $6::NUMERIC,
             volume_24h = $7::NUMERIC,
             holder_count = $8,
             bonding_percent = $9::NUMERIC,
@@ -57,6 +58,22 @@ pub async fn find_by_token(pool: &PgPool, token_id: &str) -> anyhow::Result<Opti
     .await?;
 
     Ok(row)
+}
+
+pub async fn set_graduated(pool: &PgPool, token_id: &str) -> anyhow::Result<()> {
+    let now = crate::types::common::current_unix_timestamp();
+    sqlx::query(
+        r#"
+        UPDATE market_data
+        SET is_graduated = true, market_type = 'DEX', updated_at = $2
+        WHERE token_id = $1
+        "#,
+    )
+    .bind(token_id)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 #[derive(Debug, sqlx::FromRow)]

@@ -34,7 +34,8 @@ pub async fn get_token(
         .await
         .map_err(AppError::Internal)?;
 
-    let token_info = build_token_info(&project_row, &creator);
+    let is_graduated = market_row.as_ref().map(|m| m.is_graduated).unwrap_or(false);
+    let token_info = build_token_info(&project_row, &creator, is_graduated);
     let market_info = build_market_info(token_id, market_row.as_ref());
 
     Ok(ITokenData {
@@ -130,6 +131,7 @@ pub async fn get_trending(
 fn build_token_info(
     row: &project::ProjectRow,
     creator: &IAccountInfo,
+    is_graduated: bool,
 ) -> ITokenInfo {
     ITokenInfo {
         token_id: row.project_id.clone(),
@@ -139,7 +141,7 @@ fn build_token_info(
         banner_uri: None,
         description: row.description.clone(),
         category: row.category.clone(),
-        is_graduated: false,
+        is_graduated,
         creator: creator.clone(),
         website: row.website.clone(),
         twitter: row.twitter.clone(),

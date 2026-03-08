@@ -158,6 +158,10 @@ async fn handle_graduated(
         .await
         .map_err(|err| ObserverError::retriable(err))?;
 
+    openlaunch_shared::db::postgres::controller::market::set_graduated(pool, &e.token)
+        .await
+        .map_err(|err| ObserverError::retriable(err))?;
+
     tracing::info!(token = %e.token, "Graduated processed");
     Ok(())
 }
