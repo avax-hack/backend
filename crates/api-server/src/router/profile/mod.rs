@@ -39,6 +39,7 @@ pub async fn get_profile(
     State(state): State<AppState>,
     Path(address): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let address = address.to_lowercase();
     let profile = profile_service::get_profile(&state.db, &address).await?;
     Ok(Json(serde_json::json!(profile)))
 }
@@ -61,6 +62,7 @@ pub async fn get_hold_tokens(
     Path(account_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result =
         profile_service::get_hold_tokens(&state.db, &account_id, &pagination).await?;
     Ok(Json(serde_json::json!(result)))
@@ -84,6 +86,7 @@ pub async fn get_swap_history(
     Path(account_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result =
         profile_service::get_swap_history(&state.db, &account_id, &pagination).await?;
     Ok(Json(serde_json::json!(result)))
@@ -107,6 +110,7 @@ pub async fn get_ido_history(
     Path(account_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result =
         profile_service::get_ido_history(&state.db, &account_id, &pagination).await?;
     Ok(Json(serde_json::json!(result)))
@@ -130,6 +134,7 @@ pub async fn get_refund_history(
     Path(account_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result =
         profile_service::get_refund_history(&state.db, &account_id, &pagination).await?;
     Ok(Json(serde_json::json!(result)))
@@ -148,6 +153,7 @@ pub async fn get_portfolio(
     State(state): State<AppState>,
     Path(account_id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result = profile_service::get_portfolio(&state.db, &account_id).await?;
     Ok(Json(serde_json::json!(result)))
 }
@@ -170,6 +176,7 @@ pub async fn get_created_tokens(
     Path(account_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let account_id = account_id.to_lowercase();
     let result =
         profile_service::get_created_tokens(&state.db, &account_id, &pagination).await?;
     Ok(Json(serde_json::json!(result)))

@@ -41,6 +41,7 @@ pub async fn get_token(
     State(state): State<AppState>,
     Path(token_id): Path<String>,
 ) -> AppResult<Json<ITokenData>> {
+    let token_id = token_id.to_lowercase();
     let cache_key = format!("token:{token_id}");
 
     let data: ITokenData = state

@@ -37,6 +37,7 @@ pub async fn get_project(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
 ) -> AppResult<Json<IProjectData>> {
+    let project_id = project_id.to_lowercase();
     let cache_key = format!("project:{project_id}");
 
     let data = state
@@ -170,6 +171,7 @@ pub async fn get_investors(
     Path(project_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<PaginatedResponse<project_service::InvestorInfo>>> {
+    let project_id = project_id.to_lowercase();
     let result =
         project_service::get_investors(&state.db, &project_id, &pagination).await?;
 

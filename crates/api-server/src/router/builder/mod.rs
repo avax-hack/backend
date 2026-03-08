@@ -53,6 +53,7 @@ pub async fn get_overview(
     AuthUser(session): AuthUser,
     Path(project_id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let project_id = project_id.to_lowercase();
     verify_project_owner(&state, &project_id, &session.account_id).await?;
     let overview = builder_service::get_overview(&state.db, &project_id).await?;
     Ok(Json(serde_json::json!(overview)))
@@ -74,6 +75,7 @@ pub async fn get_stats(
     AuthUser(session): AuthUser,
     Path(project_id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let project_id = project_id.to_lowercase();
     verify_project_owner(&state, &project_id, &session.account_id).await?;
     let stats = builder_service::get_stats(&state.db, &project_id).await?;
     Ok(Json(serde_json::json!(stats)))

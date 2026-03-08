@@ -47,6 +47,7 @@ pub async fn get_chart(
     if params.from >= params.to {
         return Err(AppError::BadRequest("'from' must be less than 'to'".to_string()));
     }
+    let token_address = token_address.to_lowercase();
     let bars = trade_service::get_chart(&state.db, &token_address, &params).await?;
     Ok(Json(serde_json::json!({ "bars": bars })))
 }
@@ -90,6 +91,7 @@ pub async fn get_swap_history(
         page: query.page,
         limit: query.limit,
     };
+    let token_id = token_id.to_lowercase();
     let trade_type_filter = match query.trade_type.as_deref() {
         Some("BUY") => Some("BUY"),
         Some("SELL") => Some("SELL"),
@@ -124,6 +126,7 @@ pub async fn get_holders(
     Path(token_id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let token_id = token_id.to_lowercase();
     let result =
         trade_service::get_holders(&state.db, &token_id, &pagination).await?;
     Ok(Json(serde_json::to_value(result).map_err(|e| AppError::Internal(e.into()))?))
@@ -142,6 +145,7 @@ pub async fn get_market(
     State(state): State<AppState>,
     Path(token_id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let token_id = token_id.to_lowercase();
     let cache_key = format!("market:{token_id}");
 
     let data: serde_json::Value = state
@@ -173,6 +177,7 @@ pub async fn get_metrics(
     State(state): State<AppState>,
     Path(token_id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let token_id = token_id.to_lowercase();
     let cache_key = format!("metrics:{token_id}");
 
     let data: serde_json::Value = state
@@ -252,6 +257,7 @@ pub async fn get_quote(
     Path(token_id): Path<String>,
     Query(query): Query<QuoteQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let token_id = token_id.to_lowercase();
     if query.amount.is_empty() {
         return Err(AppError::BadRequest("amount is required".to_string()));
     }
