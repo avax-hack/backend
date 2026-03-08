@@ -80,7 +80,7 @@ pub async fn session(
         .map_err(AppError::Internal)?;
 
     let cookie_value = format!(
-        "session={session_id}; HttpOnly; Secure; Path=/; Max-Age={SESSION_MAX_AGE_SECS}; SameSite=Lax"
+        "session={session_id}; HttpOnly; Secure; Path=/; Max-Age={SESSION_MAX_AGE_SECS}; SameSite=None"
     );
 
     let mut headers = HeaderMap::new();
@@ -109,7 +109,7 @@ pub async fn delete_session(
         .await
         .map_err(AppError::Internal)?;
 
-    let cookie_value = "session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax";
+    let cookie_value = "session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=None";
     let mut headers = HeaderMap::new();
     headers.insert(
         header::SET_COOKIE,
@@ -128,7 +128,7 @@ mod tests {
     fn session_cookie_contains_all_required_security_attributes() {
         let session_id = "test-session-id-abc123";
         let cookie_value = format!(
-            "session={session_id}; HttpOnly; Secure; Path=/; Max-Age={SESSION_MAX_AGE_SECS}; SameSite=Lax"
+            "session={session_id}; HttpOnly; Secure; Path=/; Max-Age={SESSION_MAX_AGE_SECS}; SameSite=None"
         );
         let parsed: HeaderValue = cookie_value.parse().expect("cookie must be a valid header value");
         let s = parsed.to_str().unwrap();
@@ -136,7 +136,7 @@ mod tests {
         // Verify all security-critical cookie attributes are present
         assert!(s.contains("HttpOnly"), "cookie must be HttpOnly to prevent JS access");
         assert!(s.contains("Secure"), "cookie must be Secure for HTTPS-only");
-        assert!(s.contains("SameSite=Lax"), "cookie must have SameSite=Lax for CSRF protection");
+        assert!(s.contains("SameSite=None"), "cookie must have SameSite=None for CSRF protection");
         assert!(s.contains("Path=/"), "cookie must be scoped to root path");
         assert!(
             s.contains(&format!("session={session_id}")),
@@ -150,14 +150,14 @@ mod tests {
 
     #[test]
     fn delete_session_cookie_expires_immediately() {
-        let cookie_value = "session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax";
+        let cookie_value = "session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=None";
         let parsed: HeaderValue = cookie_value.parse().expect("delete cookie must be a valid header");
         let s = parsed.to_str().unwrap();
 
         assert!(s.contains("Max-Age=0"), "delete cookie must expire immediately");
         assert!(s.contains("HttpOnly"), "delete cookie must retain HttpOnly");
         assert!(s.contains("Secure"), "delete cookie must retain Secure");
-        assert!(s.contains("SameSite=Lax"), "delete cookie must retain SameSite=Lax");
+        assert!(s.contains("SameSite=None"), "delete cookie must retain SameSite=None");
         assert!(s.contains("Path=/"), "delete cookie must retain Path=/");
     }
 
