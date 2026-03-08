@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,6 +40,10 @@ pub async fn run(
 
     let mut last_block = provider.get_block_number().await?;
 
+    // Bug 41 fix: Track tokens already sent to the channel to avoid
+    // sending duplicate graduate tasks for the same token.
+    let mut graduated_tokens: HashSet<Address> = HashSet::new();
+
     loop {
         tokio::time::sleep(poll_interval).await;
 
@@ -63,6 +68,9 @@ pub async fn run(
         let events = match filter.query().await {
             Ok(events) => events,
             Err(err) => {
+                // Bug 16 fix: Do NOT advance last_block on query failure.
+                // The next poll will re-query from the same block range so events
+                // are not permanently missed.
                 tracing::warn!(
                     %err,
                     from_block = last_block + 1,
@@ -73,9 +81,9 @@ pub async fn run(
             }
         };
 
-        last_block = current_block;
-
         if events.is_empty() {
+            // No events but query succeeded — safe to advance.
+            last_block = current_block;
             continue;
         }
 
@@ -92,6 +100,15 @@ pub async fn run(
 
         // Check each token for graduation eligibility
         for token in seen_tokens {
+            // Bug 41 fix: Skip tokens we've already sent to the channel.
+            if graduated_tokens.contains(&token) {
+                tracing::debug!(
+                    token = %token,
+                    "Token already sent for graduation, skipping duplicate"
+                );
+                continue;
+            }
+
             let ido_check = IIDO::new(ido_address, &provider);
             let project_result = ido_check.projects(token).call().await;
 
@@ -144,6 +161,7 @@ pub async fn run(
                             tracing::error!("Graduate task channel closed");
                             return Ok(());
                         }
+                        graduated_tokens.insert(token);
                     }
                 }
                 Err(err) => {
@@ -155,6 +173,9 @@ pub async fn run(
                 }
             }
         }
+
+        // Bug 16 fix: Only advance last_block AFTER successful event processing.
+        last_block = current_block;
     }
 }
 

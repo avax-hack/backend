@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alloy::primitives::{Address, Bytes, Signature as AlloySig};
 use openlaunch_shared::db::redis::RedisDatabase;
 use openlaunch_shared::types::auth::SessionInfo;
 use openlaunch_shared::types::common::current_unix_timestamp;
@@ -57,11 +58,8 @@ pub async fn verify_session(
         anyhow::bail!("Nonce mismatch");
     }
 
-    // TODO: Full secp256k1 signature verification
-    // For now, validate that signature is well-formed (already done by SessionRequest::validate)
-    if !signature.starts_with("0x") || signature.len() != 132 {
-        anyhow::bail!("Invalid signature format");
-    }
+    // Verify secp256k1 signature (EIP-191 personal_sign)
+    verify_signature(nonce, signature, &address)?;
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let now = current_unix_timestamp();
@@ -85,6 +83,53 @@ pub async fn delete_session(
     session_id: &str,
 ) -> anyhow::Result<()> {
     redis.delete_session(session_id).await
+}
+
+/// Verify an Ethereum signature using EIP-191 personal_sign format.
+/// Recovers the signer address from the signature and compares it
+/// against the claimed address.
+fn verify_signature(message: &str, signature: &str, expected_address: &str) -> anyhow::Result<()> {
+    if !signature.starts_with("0x") || signature.len() != 132 {
+        anyhow::bail!("Invalid signature format");
+    }
+
+    let sig_bytes: Bytes = signature
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid hex in signature"))?;
+
+    if sig_bytes.len() != 65 {
+        anyhow::bail!("Signature must be exactly 65 bytes");
+    }
+
+    // Parse the v value (last byte), adjusting for legacy encoding (27/28 -> 0/1)
+    let v_byte = sig_bytes[64];
+    let v = if v_byte >= 27 { v_byte - 27 } else { v_byte };
+    if v > 1 {
+        anyhow::bail!("Invalid recovery id");
+    }
+
+    let sig = AlloySig::new(
+        alloy::primitives::U256::from_be_slice(&sig_bytes[..32]),
+        alloy::primitives::U256::from_be_slice(&sig_bytes[32..64]),
+        v != 0,
+    );
+
+    // recover_address_from_msg applies EIP-191 personal_sign hashing internally
+    let recovered = sig
+        .recover_address_from_msg(message.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Signature recovery failed: {e}"))?;
+
+    let expected: Address = expected_address
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid expected address format"))?;
+
+    if recovered != expected {
+        anyhow::bail!(
+            "Signature verification failed: recovered {recovered} but expected {expected}"
+        );
+    }
+
+    Ok(())
 }
 
 fn extract_address_from_nonce(nonce_message: &str) -> anyhow::Result<String> {

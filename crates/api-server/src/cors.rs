@@ -1,4 +1,4 @@
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderValue, Method, header};
 use tower_http::cors::CorsLayer;
 
 pub fn cors_layer() -> CorsLayer {
@@ -25,7 +25,13 @@ pub fn cors_layer() -> CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers(tower_http::cors::Any)
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            header::COOKIE,
+            header::ORIGIN,
+        ])
         .allow_credentials(true)
 }
 

@@ -61,8 +61,9 @@ pub async fn find_list_filtered(
 
     let search_pattern = search.map(|s| format!("%{s}%"));
 
-    let verified_join = if verified_only {
-        "INNER JOIN milestones m_v ON m_v.project_id = p.project_id AND m_v.status = 'completed'"
+    let verified_filter = if verified_only {
+        "AND EXISTS (SELECT 1 FROM milestones m_v WHERE m_v.project_id = p.project_id)
+         AND NOT EXISTS (SELECT 1 FROM milestones m_v WHERE m_v.project_id = p.project_id AND m_v.status != 'completed')"
     } else {
         ""
     };
@@ -70,15 +71,15 @@ pub async fn find_list_filtered(
     // Use the computed order_clause for dynamic sorting.
     let query = format!(
         r#"
-        SELECT DISTINCT p.project_id, p.name, p.symbol, p.image_uri, p.tagline, p.category,
+        SELECT p.project_id, p.name, p.symbol, p.image_uri, p.tagline, p.category,
                p.creator, p.status, p.target_raise::TEXT, p.usdc_raised::TEXT,
                p.created_at,
                COALESCE((SELECT COUNT(*) FROM investments i WHERE i.project_id = p.project_id), 0) as investor_count
         FROM projects p
-        {verified_join}
         WHERE ($3::TEXT IS NULL OR p.status = $3)
           AND ($4::TEXT IS NULL OR p.category = $4)
           AND ($5::TEXT IS NULL OR (p.name ILIKE $5 OR p.symbol ILIKE $5))
+          {verified_filter}
         ORDER BY {order_clause}
         LIMIT $1 OFFSET $2
         "#,
@@ -94,11 +95,11 @@ pub async fn find_list_filtered(
 
     let count_query = format!(
         r#"
-        SELECT COUNT(DISTINCT p.project_id) FROM projects p
-        {verified_join}
+        SELECT COUNT(*) FROM projects p
         WHERE ($1::TEXT IS NULL OR p.status = $1)
           AND ($2::TEXT IS NULL OR p.category = $2)
           AND ($3::TEXT IS NULL OR (p.name ILIKE $3 OR p.symbol ILIKE $3))
+          {verified_filter}
         "#,
     );
     let total = sqlx::query_scalar::<_, Option<i64>>(&count_query)
@@ -110,6 +111,65 @@ pub async fn find_list_filtered(
     .unwrap_or(0);
 
     Ok((rows, total))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn insert(
+    pool: &PgPool,
+    project_id: &str,
+    name: &str,
+    symbol: &str,
+    image_uri: &str,
+    description: Option<&str>,
+    tagline: &str,
+    category: &str,
+    creator: &str,
+    target_raise: &str,
+    ido_supply: &str,
+    total_supply: &str,
+    deadline: i64,
+    website: Option<&str>,
+    twitter: Option<&str>,
+    github: Option<&str>,
+    telegram: Option<&str>,
+    created_at: i64,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO projects (
+            project_id, name, symbol, image_uri, description, tagline, category,
+            creator, status, target_raise, token_price, ido_supply, ido_sold,
+            total_supply, usdc_raised, usdc_released, tokens_refunded,
+            deadline, website, twitter, github, telegram, created_at, tx_hash
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7,
+            $8, 'funding', $9::NUMERIC, 0, $10::NUMERIC, 0,
+            $11::NUMERIC, 0, 0, 0,
+            $12, $13, $14, $15, $16, $17, ''
+        )
+        "#,
+    )
+    .bind(project_id)
+    .bind(name)
+    .bind(symbol)
+    .bind(image_uri)
+    .bind(description)
+    .bind(tagline)
+    .bind(category)
+    .bind(creator)
+    .bind(target_raise)
+    .bind(ido_supply)
+    .bind(total_supply)
+    .bind(deadline)
+    .bind(website)
+    .bind(twitter)
+    .bind(github)
+    .bind(telegram)
+    .bind(created_at)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn update_status(pool: &PgPool, project_id: &str, status: &str) -> anyhow::Result<()> {

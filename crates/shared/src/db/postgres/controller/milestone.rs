@@ -25,6 +25,7 @@ pub async fn insert_batch(
     project_id: &str,
     milestones: &[(i32, String, String, i32)],
 ) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
     for (index, title, description, allocation_bps) in milestones {
         sqlx::query(
             r#"
@@ -37,9 +38,10 @@ pub async fn insert_batch(
         .bind(title)
         .bind(description)
         .bind(allocation_bps)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

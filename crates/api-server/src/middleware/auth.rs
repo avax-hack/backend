@@ -20,9 +20,11 @@ pub async fn session_middleware(
     let mut request = request;
 
     if let Some(session_id) = extract_session_cookie(request.headers()) {
-        if let Ok(Some(info)) = state.redis.get_session(&session_id).await {
-            if !info.is_expired() {
-                request.extensions_mut().insert(info);
+        if !session_id.is_empty() {
+            if let Ok(Some(info)) = state.redis.get_session(&session_id).await {
+                if !info.is_expired() {
+                    request.extensions_mut().insert(info);
+                }
             }
         }
     }

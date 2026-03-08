@@ -127,6 +127,41 @@ pub async fn create_project(
 
     // project_id will be the on-chain token address; for pre-chain creation use a placeholder
     let project_id = format!("0x{}", uuid::Uuid::new_v4().simple());
+    let now = openlaunch_shared::types::common::current_unix_timestamp();
+
+    // Compute token_price = target_raise / token_supply, ido_supply = total_supply = token_supply
+    // Pre-chain placeholder: tx_hash is empty until on-chain deployment
+    let target_raise_bd: bigdecimal::BigDecimal = request
+        .target_raise
+        .parse()
+        .map_err(|_| AppError::BadRequest("Invalid target_raise".to_string()))?;
+    let token_supply_bd: bigdecimal::BigDecimal = request
+        .token_supply
+        .parse()
+        .map_err(|_| AppError::BadRequest("Invalid token_supply".to_string()))?;
+
+    project::insert(
+        db.writer(),
+        &project_id,
+        &request.name,
+        &request.symbol,
+        &request.image_uri,
+        Some(&request.description),
+        &request.tagline,
+        &request.category,
+        creator,
+        &target_raise_bd.to_string(),
+        &token_supply_bd.to_string(),
+        &token_supply_bd.to_string(),
+        request.deadline,
+        request.website.as_deref(),
+        request.twitter.as_deref(),
+        request.github.as_deref(),
+        request.telegram.as_deref(),
+        now,
+    )
+    .await
+    .map_err(AppError::Internal)?;
 
     let milestones: Vec<(i32, String, String, i32)> = request
         .milestones

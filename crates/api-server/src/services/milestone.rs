@@ -9,6 +9,39 @@ use openlaunch_shared::types::milestone::{
     IMilestoneVerificationData, MilestoneStatus, MilestoneSubmitRequest,
 };
 
+/// Verify that the given account is the project creator for the milestone.
+pub async fn verify_milestone_ownership(
+    db: &Arc<PostgresDatabase>,
+    milestone_id: &str,
+    account_id: &str,
+) -> AppResult<()> {
+    let db_id = parse_milestone_db_id(milestone_id)?;
+
+    let creator: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT p.creator
+        FROM milestones m
+        JOIN projects p ON p.project_id = m.project_id
+        WHERE m.id = $1
+        "#,
+    )
+    .bind(db_id)
+    .fetch_optional(db.reader())
+    .await
+    .map_err(|e| AppError::Internal(e.into()))?;
+
+    let creator = creator
+        .ok_or_else(|| AppError::NotFound(format!("Milestone {milestone_id} not found")))?;
+
+    if creator.to_lowercase() != account_id.to_lowercase() {
+        return Err(AppError::Forbidden(
+            "Only the project creator can perform this action".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Submit evidence for a milestone.
 /// The caller must be the project creator (checked in handler).
 pub async fn submit_evidence(

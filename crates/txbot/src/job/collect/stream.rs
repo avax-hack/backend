@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -41,6 +42,10 @@ pub async fn run(
         "Collect stream started"
     );
 
+    // Bug 42 fix: Track tokens that already have an in-flight collect task
+    // to avoid sending duplicate tasks every poll cycle.
+    let mut in_flight: HashSet<String> = HashSet::new();
+
     loop {
         tokio::time::sleep(poll_interval).await;
 
@@ -64,6 +69,15 @@ pub async fn run(
         );
 
         for token_addr_str in &graduated_projects {
+            // Bug 42 fix: Skip tokens already being processed.
+            if in_flight.contains(token_addr_str) {
+                tracing::debug!(
+                    token = %token_addr_str,
+                    "Collect task already in-flight, skipping"
+                );
+                continue;
+            }
+
             let token_address: Address = match token_addr_str.parse() {
                 Ok(addr) => addr,
                 Err(err) => {
@@ -76,18 +90,28 @@ pub async fn run(
                 }
             };
 
-            // Check on-chain fees for this token
+            // TODO(Bug 6): This fee check is INCORRECT. It queries the IDO contract's
+            // usdcRaised - usdcReleased, which represents unreleased IDO milestone funds,
+            // NOT the actual accumulated LP trading fees. The correct approach is to query
+            // the LP position's uncollected fees from the Uniswap V3 NonfungiblePositionManager
+            // or the fee manager contract. This must be fixed once the correct contract
+            // interface for querying LP fees is available.
             let ido = IIDO::new(ido_address, &provider);
             let fees_result = ido.projects(token_address).call().await;
 
             match fees_result {
                 Ok(project) => {
-                    // Use usdcRaised - usdcReleased as proxy for collectible fees.
-                    // In production, query actual LP position accumulated trading fees.
                     let unreleased = project
                         .usdcRaised
                         .checked_sub(project.usdcReleased)
                         .unwrap_or(U256::ZERO);
+
+                    tracing::warn!(
+                        token = %token_addr_str,
+                        unreleased = %unreleased,
+                        "Fee check uses IDO usdcRaised-usdcReleased as proxy; \
+                         should query actual LP position fees instead"
+                    );
 
                     if unreleased >= min_amount {
                         let task = CollectTask {
@@ -102,7 +126,11 @@ pub async fn run(
                             tracing::error!("Collect task channel closed");
                             return Ok(());
                         }
+                        in_flight.insert(token_addr_str.clone());
                     } else {
+                        // If fees dropped below threshold, remove from in-flight
+                        // so it can be re-evaluated next cycle.
+                        in_flight.remove(token_addr_str);
                         tracing::debug!(
                             token = %token_addr_str,
                             unreleased = %unreleased,
@@ -130,6 +158,10 @@ pub async fn run(
 async fn fetch_graduated_projects(db: &PostgresDatabase) -> anyhow::Result<Vec<String>> {
     let mut all_addresses = Vec::new();
     let mut page: i64 = 1;
+    // Bug 5 fix: Capture the total from the first query and use it consistently.
+    // `total` represents the total number of matching rows across all pages,
+    // not a per-page count.
+    let mut total_count: Option<i64> = None;
 
     loop {
         let pagination = openlaunch_shared::types::common::PaginationParams {
@@ -145,7 +177,12 @@ async fn fetch_graduated_projects(db: &PostgresDatabase) -> anyhow::Result<Vec<S
             all_addresses.push(row.project_id);
         }
 
-        if all_addresses.len() as i64 >= total || row_count < 100 {
+        // Store total from first query; use it for all subsequent comparisons.
+        let expected_total = *total_count.get_or_insert(total);
+
+        // Terminate when we've fetched all rows or the page was not full
+        // (indicating no more rows remain).
+        if all_addresses.len() as i64 >= expected_total || row_count < 100 {
             break;
         }
 

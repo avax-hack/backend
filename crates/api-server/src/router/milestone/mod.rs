@@ -9,6 +9,7 @@ use openlaunch_shared::types::milestone::MilestoneSubmitRequest;
 
 use crate::middleware::auth::AuthUser;
 use crate::services::milestone as milestone_service;
+use crate::services::milestone::verify_milestone_ownership;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -30,11 +31,13 @@ pub fn router() -> Router<AppState> {
 )]
 pub async fn submit_milestone(
     State(state): State<AppState>,
-    AuthUser(_session): AuthUser,
+    AuthUser(session): AuthUser,
     Path(milestone_id): Path<String>,
     Json(body): Json<MilestoneSubmitRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    // TODO: Verify that _session.account_id is the project creator for this milestone
+    // Verify that the authenticated user is the project creator for this milestone
+    verify_milestone_ownership(&state.db, &milestone_id, &session.account_id).await?;
+
     milestone_service::submit_evidence(&state.db, &milestone_id, &body).await?;
     Ok(Json(serde_json::json!({ "success": true })))
 }

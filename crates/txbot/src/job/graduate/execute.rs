@@ -26,7 +26,15 @@ pub async fn run(
     mut rx: mpsc::Receiver<GraduateTask>,
     metrics: Arc<TxBotMetrics>,
 ) -> anyhow::Result<()> {
-    let signer = wallets.graduate_signer()?;
+    let signer = match wallets.graduate_signer() {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::error!(%err, "Failed to load graduate wallet signer at startup");
+            return Err(anyhow::anyhow!(
+                "Graduate executor cannot start: wallet initialization failed: {err}"
+            ));
+        }
+    };
     let wallet = EthereumWallet::from(signer.clone());
 
     let provider_url = get_rpc_url(&rpc)?;
@@ -101,6 +109,15 @@ pub async fn run(
                 );
 
                 let receipt = pending_tx.get_receipt().await?;
+
+                // Bug 38 fix: Check receipt status. A status of false/0 means
+                // the transaction reverted on-chain.
+                if !receipt.status() {
+                    return Err(anyhow::anyhow!(
+                        "Graduate transaction reverted on-chain (tx_hash={})",
+                        receipt.transaction_hash
+                    ));
+                }
 
                 tracing::info!(
                     tx_hash = %receipt.transaction_hash,

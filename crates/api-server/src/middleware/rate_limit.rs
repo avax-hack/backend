@@ -29,8 +29,9 @@ pub async fn rate_limit_middleware(
             .into_response()
         }
         Err(err) => {
-            tracing::warn!("Rate limit check failed, allowing request: {err}");
-            next.run(request).await
+            tracing::error!("Rate limit check failed, denying request (fail closed): {err}");
+            AppError::Internal(anyhow::anyhow!("Service temporarily unavailable"))
+                .into_response()
         }
     }
 }

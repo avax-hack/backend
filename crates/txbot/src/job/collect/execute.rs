@@ -79,6 +79,15 @@ pub async fn run(
 
                 let receipt = pending_tx.get_receipt().await?;
 
+                // Bug 38 fix: Check receipt status. A status of false/0 means
+                // the transaction reverted on-chain.
+                if !receipt.status() {
+                    return Err(anyhow::anyhow!(
+                        "CollectFees transaction reverted on-chain (tx_hash={})",
+                        receipt.transaction_hash
+                    ));
+                }
+
                 tracing::info!(
                     tx_hash = %receipt.transaction_hash,
                     block = ?receipt.block_number,
