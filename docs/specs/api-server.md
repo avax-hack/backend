@@ -73,6 +73,7 @@ Shared application state cloned into every request handler via Axum's `State` ex
 pub struct AppState {
     pub db: Arc<PostgresDatabase>,      // PostgreSQL (primary + replica)
     pub redis: Arc<RedisDatabase>,       // Redis connection
+    pub r2: Arc<R2Client>,              // Cloudflare R2 storage
     pub cache: Arc<SingleFlightCache>,   // In-memory dedup cache (20k entries, 1s TTL)
 }
 ```
@@ -465,7 +466,7 @@ Get paginated token list sorted by `sortType`.
 **Cache:** `"token_list:<sortType>:<page>:<limit>"` (1s TTL)
 
 **Path Params:** `sortType` (string, e.g. `"recent"`)
-**Query Params:** `page` (default 1), `limit` (default 20, max 100)
+**Query Params:** `page` (default 1), `limit` (default 20, max 100), `category`, `verified_only`, `search`, `is_ido` (bool: `true`=funding, `false`=graduated)
 
 **Response (200):**
 ```json
@@ -903,20 +904,53 @@ Get builder dashboard stats for a project.
 
 #### `POST /metadata/image`
 
-Upload an image file.
+Upload an image to Cloudflare R2.
 
 **Auth:** Session (required)
 
 **Request Body:** `multipart/form-data` with a `file` field.
 
-**Validation:** File must not be empty.
+**Validation:**
+- Content-Type: `image/png`, `image/jpeg`, `image/webp`, `image/gif` only
+- File size: 5MB max
+- Magic bytes verification
 
 **Response (200):**
 ```json
-{ "uri": "/uploads/images/<filename>" }
+{ "image_uri": "https://<R2_IMAGE_PUBLIC_URL>/<uuid>.<ext>" }
 ```
 
-**NOTE:** Placeholder implementation; S3/R2 integration is TODO.
+---
+
+#### `POST /metadata/create`
+
+Create metadata JSON and upload to R2 metadata bucket.
+
+**Auth:** Session (required)
+
+**Request Body:**
+```json
+{
+  "name": "string (2-50 chars)",
+  "symbol": "string (2-10 chars, uppercase + digits only)",
+  "image_uri": "string (must be valid R2 image URL)",
+  "category": "string (1-50 chars)",
+  "homepage": "string | null (https:// only)",
+  "twitter": "string | null (https:// only)",
+  "telegram": "string | null (https:// only)",
+  "discord": "string | null (https:// only)",
+  "milestones": [
+    { "order": 1, "title": "string", "description": "string", "fund_allocation_percent": 50 }
+  ]
+}
+```
+
+**Validation:** `image_uri` must start with `R2_IMAGE_PUBLIC_URL` prefix. Milestones: 2-6 items, allocations sum to 100%.
+
+**Response (200):**
+```json
+{ "metadata_uri": "https://<R2_METADATA_PUBLIC_URL>/<uuid>.json" }
+```
 
 ---
 
@@ -934,8 +968,6 @@ Upload an evidence file.
 ```json
 { "uri": "/uploads/evidence/<filename>" }
 ```
-
-**NOTE:** Placeholder implementation; S3/R2 integration is TODO.
 
 ---
 
@@ -982,7 +1014,7 @@ Token data aggregation from projects and market data.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `get_token` | `(db, token_id) -> AppResult<ITokenData>` | Token info + market info. Token ID == project ID. |
-| `get_token_list` | `(db, sort_type, pagination) -> AppResult<PaginatedResponse<TokenListItem>>` | Paginated token list with market data. |
+| `get_token_list` | `(db, sort_type, pagination) -> AppResult<PaginatedResponse<TokenListItem>>` | Paginated token list with market data. Supports `is_ido` filter (true=funding, false=graduated). |
 | `get_trending` | `(db) -> AppResult<Vec<TokenListItem>>` | Top 10 tokens sorted by recent activity. |
 
 Market types: `CURVE` (bonding curve), `DEX` (graduated to DEX), `IDO` (default/initial).
@@ -1026,12 +1058,20 @@ Builder dashboard data.
 
 ### 4.8 `services::upload`
 
-File upload service (placeholder).
+Image upload to Cloudflare R2.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `upload_image` | `(filename, data) -> AppResult<String>` | Returns `/uploads/images/<filename>`. TODO: S3/R2 integration. |
-| `upload_evidence` | `(filename, data) -> AppResult<String>` | Returns `/uploads/evidence/<filename>`. TODO: S3/R2 integration. |
+| `upload_image` | `(r2, bytes, content_type) -> AppResult<String>` | Validates file type (magic bytes), uploads to R2 image bucket, returns public URL. |
+| `validate_image_uri` | `(uri) -> bool` | Checks URI starts with `R2_IMAGE_PUBLIC_URL` prefix. |
+
+### 4.9 `services::metadata`
+
+Metadata JSON creation and upload to Cloudflare R2.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `create_metadata` | `(r2, request) -> AppResult<String>` | Validates all fields (name, symbol, category, image_uri, milestones), builds JSON, uploads to R2 metadata bucket, returns public URL. |
 
 ---
 
@@ -1098,6 +1138,13 @@ All configuration is via environment variables.
 | `REPLICA_DATABASE_URL` | (required) | PostgreSQL read replica connection string |
 | `REDIS_URL` | (required) | Redis connection string |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated allowed origins |
+| `R2_ACCOUNT_ID` | (required) | Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | (required) | R2 API access key |
+| `R2_SECRET_ACCESS_KEY` | (required) | R2 API secret key |
+| `R2_IMAGE_BUCKET` | `openlaunch-image` | R2 image bucket name |
+| `R2_METADATA_BUCKET` | `openlaunch-metadata` | R2 metadata bucket name |
+| `R2_IMAGE_PUBLIC_URL` | (required) | R2 image bucket public URL |
+| `R2_METADATA_PUBLIC_URL` | (required) | R2 metadata bucket public URL |
 | `RUST_LOG` | `info` | Log level filter (tracing env filter) |
 
 ---

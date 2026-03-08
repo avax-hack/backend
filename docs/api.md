@@ -46,6 +46,7 @@
   - [GET /builder/stats/:projectId](#get-builderstatsprojectid)
 - [Upload](#upload)
   - [POST /metadata/image](#post-metadataimage)
+  - [POST /metadata/create](#post-metadatacreate)
   - [POST /metadata/evidence](#post-metadataevidence)
 - [Health](#health)
   - [GET /health](#get-health)
@@ -639,10 +640,11 @@ GET /token/0x7a3b9c2e1f4d5a6b8c0e9f1a2b3c4d5e6f7a8b9c
 | category | string | No | - | 카테고리 필터 (예: `defi`, `gaming`) |
 | verified_only | boolean | No | false | 검증된 토큰만 필터 |
 | search | string | No | - | 이름/심볼 검색어 |
+| is_ido | boolean | No | - | IDO 상태 필터: `true`=펀딩 중(졸업 전), `false`=졸업 완료 |
 
 **Example Request:**
 ```
-GET /order/volume?page=1&limit=10&category=defi&verified_only=true&search=swap
+GET /order/volume?page=1&limit=10&category=defi&is_ido=true
 ```
 
 **Response 200:**
@@ -1606,7 +1608,7 @@ GET /trade/quote/0x7a3b9c2e?amount=1000&type=BUY&slippage=1.5
 
 ### POST /metadata/image
 
-프로젝트 이미지를 업로드한다.
+프로젝트 이미지를 Cloudflare R2에 업로드한다.
 
 **Auth:** Session
 
@@ -1616,12 +1618,17 @@ GET /trade/quote/0x7a3b9c2e?amount=1000&type=BUY&slippage=1.5
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| file | binary | Yes | 이미지 파일 (비어있으면 안 됨) |
+| file | binary | Yes | 이미지 파일 |
+
+**Validation:**
+- Content-Type: `image/png`, `image/jpeg`, `image/webp`, `image/gif` only
+- File size: 5MB max
+- Magic bytes verification (실제 파일 타입 검증)
 
 **Response 200:**
 ```json
 {
-  "uri": "https://storage.openlaunch.io/images/abc123-project-logo.png"
+  "image_uri": "https://pub-f5d8da8e313244248f626b7d5dc6610d.r2.dev/{uuid}.png"
 }
 ```
 
@@ -1629,7 +1636,67 @@ GET /trade/quote/0x7a3b9c2e?amount=1000&type=BUY&slippage=1.5
 
 | Status | Code | Description |
 |--------|------|-------------|
-| 400 | BAD_REQUEST | 파일이 비어있거나, multipart에 file 필드가 없는 경우 |
+| 400 | BAD_REQUEST | 지원하지 않는 파일 형식, 5MB 초과, 파일 비어있음 |
+| 401 | UNAUTHORIZED | 인증되지 않은 요청 |
+
+---
+
+### POST /metadata/create
+
+메타데이터 JSON을 생성하여 Cloudflare R2에 업로드한다.
+
+**Auth:** Session
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | Yes | 토큰 이름 (2-50자) |
+| symbol | string | Yes | 토큰 심볼 (2-10자, 대문자+숫자만) |
+| image_uri | string | Yes | R2 이미지 URL (`/metadata/image`로 업로드한 URI) |
+| category | string | Yes | 카테고리 (1-50자, 자유 텍스트) |
+| homepage | string | No | 홈페이지 URL (`https://`로 시작) |
+| twitter | string | No | 트위터 URL (`https://`로 시작) |
+| telegram | string | No | 텔레그램 URL (`https://`로 시작) |
+| discord | string | No | 디스코드 URL (`https://`로 시작) |
+| milestones | array | Yes | 마일스톤 목록 (2-6개, 합계 100%) |
+
+**Milestone Object:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| order | number | 순서 |
+| title | string | 제목 (필수) |
+| description | string | 설명 (필수) |
+| fund_allocation_percent | number | 자금 배분 비율 (1-100, 합계 100) |
+
+**Example Request:**
+```json
+{
+  "name": "MyToken",
+  "symbol": "MTK",
+  "image_uri": "https://pub-f5d8da8e313244248f626b7d5dc6610d.r2.dev/abc.png",
+  "category": "DeFi",
+  "homepage": "https://mytoken.io",
+  "milestones": [
+    { "order": 1, "title": "MVP", "description": "Build MVP", "fund_allocation_percent": 50 },
+    { "order": 2, "title": "Launch", "description": "Ship", "fund_allocation_percent": 50 }
+  ]
+}
+```
+
+**Response 200:**
+```json
+{
+  "metadata_uri": "https://pub-aea7c48b8fdb4309ad12ff1799b80216.r2.dev/{uuid}.json"
+}
+```
+
+**Errors:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | BAD_REQUEST | 유효성 검사 실패 (필드 길이, 심볼 형식, image_uri 검증, 마일스톤 합계 등) |
 | 401 | UNAUTHORIZED | 인증되지 않은 요청 |
 
 ---

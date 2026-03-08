@@ -39,6 +39,7 @@ Auth required. Creates a metadata JSON and uploads to R2 metadata bucket.
   "name": "MyToken",
   "symbol": "MTK",
   "image_uri": "https://openlaunch-image.{...}.r2.dev/xxx.png",
+  "category": "DeFi",
   "homepage": "https://...",
   "twitter": "https://...",
   "telegram": "https://...",
@@ -62,6 +63,7 @@ Auth required. Creates a metadata JSON and uploads to R2 metadata bucket.
 | name | String | Required, 2-50 chars |
 | symbol | String | Required, 2-10 chars, `[A-Z0-9]` only |
 | image_uri | String | Required, must start with R2 image bucket URL prefix |
+| category | String | Required, 1-50 chars, free text |
 | homepage | Option\<String\> | If present, must start with `https://` |
 | twitter | Option\<String\> | If present, must start with `https://` |
 | telegram | Option\<String\> | If present, must start with `https://` |
