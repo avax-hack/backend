@@ -10,6 +10,7 @@ pub struct CreateMetadataRequest {
     pub name: String,
     pub symbol: String,
     pub image_uri: String,
+    pub category: String,
     pub homepage: Option<String>,
     pub twitter: Option<String>,
     pub telegram: Option<String>,
@@ -43,6 +44,9 @@ impl CreateMetadataRequest {
             return Err(AppError::BadRequest(
                 "symbol must be uppercase letters and digits only".into(),
             ));
+        }
+        if self.category.is_empty() || self.category.len() > 50 {
+            return Err(AppError::BadRequest("category must be 1-50 characters".into()));
         }
         if !validate_image_uri(&self.image_uri) {
             return Err(AppError::BadRequest(
@@ -122,6 +126,7 @@ mod tests {
             name: "TestToken".to_string(),
             symbol: "TEST".to_string(),
             image_uri: "placeholder".to_string(),
+            category: "DeFi".to_string(),
             homepage: None,
             twitter: None,
             telegram: None,
