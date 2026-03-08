@@ -26,6 +26,7 @@ impl R2Client {
         );
 
         let config = aws_sdk_s3::Config::builder()
+            .behavior_version_latest()
             .endpoint_url(&endpoint)
             .region(Region::new("auto"))
             .credentials_provider(credentials)
