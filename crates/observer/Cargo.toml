@@ -1,0 +1,25 @@
+[package]
+name = "openlaunch-observer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+openlaunch-shared = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bigdecimal = { workspace = true }
+dashmap = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+lazy_static = { workspace = true }
+alloy = { workspace = true }
+sqlx = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
