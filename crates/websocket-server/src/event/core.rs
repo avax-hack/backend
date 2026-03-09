@@ -18,8 +18,8 @@ pub enum SubscriptionKey {
     Project(String),
     /// Milestone events for a specific project (token address).
     Milestone(String),
-    /// Chart bar updates for a specific token address.
-    Chart(String),
+    /// Chart bar updates for a specific token address and interval.
+    Chart(String, String),
     /// Global broadcast for new content (new projects, graduations, etc.).
     NewContent,
 }
@@ -32,7 +32,7 @@ impl SubscriptionKey {
             Self::Price(id) => format!("price:{id}"),
             Self::Project(id) => format!("project:{id}"),
             Self::Milestone(id) => format!("milestone:{id}"),
-            Self::Chart(id) => format!("chart:{id}"),
+            Self::Chart(id, interval) => format!("chart:{id}:{interval}"),
             Self::NewContent => "new_content".to_string(),
         }
     }
@@ -49,6 +49,12 @@ mod tests {
 
         let key = SubscriptionKey::NewContent;
         assert_eq!(key.to_channel_key(), "new_content");
+    }
+
+    #[test]
+    fn test_chart_subscription_key_includes_interval() {
+        let key = SubscriptionKey::Chart("0xabc".to_string(), "5m".to_string());
+        assert_eq!(key.to_channel_key(), "chart:0xabc:5m");
     }
 
     #[test]

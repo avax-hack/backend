@@ -145,14 +145,7 @@ pub fn dispatch(
             )
         }
         "chart_subscribe" => {
-            handle_keyed_subscribe(
-                request,
-                "token_id",
-                |id| SubscriptionKey::Chart(id),
-                &producers.chart,
-                conn,
-                outbound_tx,
-            )
+            handle_chart_subscribe(request, &producers.chart, conn, outbound_tx)
         }
         "new_content_subscribe" => {
             handle_global_subscribe(request, &producers.new_content, conn, outbound_tx)
@@ -266,4 +259,84 @@ fn handle_global_subscribe(
         request.id.clone(),
         serde_json::json!({"subscribed": true}),
     )
+}
+
+/// Handle chart subscription with token_id and resolution parameters.
+fn handle_chart_subscribe(
+    request: &JsonRpcRequest,
+    producer: &Arc<dyn crate::event::EventProducer>,
+    conn: &mut ConnectionState,
+    outbound_tx: &mpsc::Sender<String>,
+) -> JsonRpcResponse {
+    let token_id = request.params.get("token_id").and_then(|v| v.as_str());
+    let resolution = request.params.get("resolution").and_then(|v| v.as_str());
+
+    let Some(raw_id) = token_id else {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32602,
+            "Missing required param: token_id".to_string(),
+        );
+    };
+
+    let interval = resolve_interval(resolution.unwrap_or("1"));
+
+    let Some(interval) = interval else {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32602,
+            "Invalid resolution. Supported: 1, 5, 15, 60, 240, 1D".to_string(),
+        );
+    };
+
+    let normalized_id = raw_id.to_lowercase();
+    let sub_key = SubscriptionKey::Chart(normalized_id, interval.to_string());
+    let channel_key = sub_key.to_channel_key();
+    let method = request.method.clone();
+
+    let mut rx = producer.subscribe(&channel_key);
+    let tx = outbound_tx.clone();
+    let channel_key_for_task = channel_key.clone();
+
+    let handle = tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
+                    if let Ok(json) = serde_json::to_string(&push) {
+                        if tx.send(json).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(channel = %channel_key_for_task, lagged = n, "Chart subscriber lagged");
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    });
+
+    conn.subscribe(channel_key, handle);
+
+    JsonRpcResponse::success(
+        request.id.clone(),
+        serde_json::json!({"subscribed": true}),
+    )
+}
+
+/// Map TradingView-style resolution strings to interval names.
+fn resolve_interval(resolution: &str) -> Option<&'static str> {
+    match resolution {
+        "1" | "1m" => Some("1m"),
+        "5" | "5m" => Some("5m"),
+        "15" | "15m" => Some("15m"),
+        "60" | "1h" => Some("1h"),
+        "240" | "4h" => Some("4h"),
+        "1D" | "1d" => Some("1d"),
+        _ => None,
+    }
 }
