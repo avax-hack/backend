@@ -159,7 +159,14 @@ pub async fn get_market(
             }
         })
         .await
-        .map_err(AppError::Internal)?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Not found:") {
+                AppError::NotFound(msg)
+            } else {
+                AppError::Internal(e)
+            }
+        })?;
 
     Ok(Json(data))
 }

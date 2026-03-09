@@ -4,8 +4,8 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 use openlaunch_shared::db::postgres::controller::{
-    account as account_ctrl, investment as investment_ctrl, market as market_ctrl,
-    milestone as milestone_ctrl, refund as refund_ctrl,
+    account as account_ctrl, balance as balance_ctrl, investment as investment_ctrl,
+    market as market_ctrl, milestone as milestone_ctrl, refund as refund_ctrl,
 };
 use openlaunch_shared::types::common::current_unix_timestamp;
 use openlaunch_shared::types::event::OnChainEvent;
@@ -177,6 +177,11 @@ async fn handle_tokens_purchased(
         .await
         .map_err(|err| ObserverError::retriable(err))?;
 
+    // Update buyer's token balance
+    balance_ctrl::add_balance(pool, &e.buyer, &e.token, &token_display)
+        .await
+        .map_err(|err| ObserverError::retriable(err))?;
+
     // Update holder_count in market_data
     market_ctrl::refresh_holder_count(pool, &e.token)
         .await
@@ -268,6 +273,12 @@ async fn handle_refunded(
     )
     .await
     .map_err(|err| ObserverError::retriable(err))?;
+
+    // Subtract burned tokens from buyer's balance
+    let neg_tokens = format!("-{}", tokens_display);
+    balance_ctrl::add_balance(pool, &e.buyer, &e.token, &neg_tokens)
+        .await
+        .map_err(|err| ObserverError::retriable(err))?;
 
     tracing::info!(
         token = %e.token,

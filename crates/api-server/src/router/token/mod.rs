@@ -52,7 +52,14 @@ pub async fn get_token(
             async move { token_service::get_token(&db, &tid).await.map_err(Into::into) }
         })
         .await
-        .map_err(AppError::Internal)?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Not found:") {
+                AppError::NotFound(msg)
+            } else {
+                AppError::Internal(e)
+            }
+        })?;
 
     Ok(Json(data))
 }

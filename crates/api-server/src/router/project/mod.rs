@@ -48,7 +48,14 @@ pub async fn get_project(
             async move { project_service::get_project(&db, &pid).await.map_err(Into::into) }
         })
         .await
-        .map_err(AppError::Internal)?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Not found:") {
+                AppError::NotFound(msg)
+            } else {
+                AppError::Internal(e)
+            }
+        })?;
 
     Ok(Json(data))
 }

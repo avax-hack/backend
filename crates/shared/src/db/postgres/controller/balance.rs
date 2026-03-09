@@ -27,6 +27,31 @@ pub async fn upsert(
     Ok(())
 }
 
+pub async fn add_balance(
+    pool: &PgPool,
+    account_id: &str,
+    token_id: &str,
+    amount: &str,
+) -> anyhow::Result<()> {
+    let now = crate::types::common::current_unix_timestamp();
+    sqlx::query(
+        r#"
+        INSERT INTO balances (account_id, token_id, balance, updated_at)
+        VALUES ($1, $2, $3::NUMERIC, $4)
+        ON CONFLICT (account_id, token_id) DO UPDATE SET
+            balance = balances.balance + $3::NUMERIC,
+            updated_at = $4
+        "#,
+    )
+    .bind(account_id)
+    .bind(token_id)
+    .bind(amount)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn find_by_account(
     pool: &PgPool,
     account_id: &str,

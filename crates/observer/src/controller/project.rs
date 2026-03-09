@@ -36,19 +36,14 @@ pub async fn insert_from_event(
     };
     let target_raise_display = wei_to_display(&raw_product.to_string(), TOKEN_DECIMALS + USDC_DECIMALS)?;
 
-    sqlx::query(
+    // Try to link with pre-chain project by updating its project_id to the on-chain token address
+    let updated = sqlx::query(
         r#"
-        INSERT INTO projects (
-            project_id, name, symbol, image_uri, tagline, category, creator,
-            status, target_raise, token_price, ido_supply, total_supply,
-            deadline, tx_hash, created_at
-        )
-        VALUES (
-            $1, $2, $3, $4, '', 'general', $5,
-            'funding', $6::NUMERIC, $7::NUMERIC, $8::NUMERIC, $9::NUMERIC,
-            $10, $11, $12
-        )
-        ON CONFLICT (project_id) DO NOTHING
+        UPDATE projects
+        SET project_id = $1, image_uri = $4, token_price = $7::NUMERIC,
+            ido_supply = $8::NUMERIC, total_supply = $9::NUMERIC,
+            target_raise = $6::NUMERIC, deadline = $10, tx_hash = $11
+        WHERE symbol = $3 AND tx_hash = ''
         "#,
     )
     .bind(project_id)
@@ -65,6 +60,39 @@ pub async fn insert_from_event(
     .bind(created_at)
     .execute(pool)
     .await?;
+
+    // If no pre-chain project matched, insert a new one
+    if updated.rows_affected() == 0 {
+        sqlx::query(
+            r#"
+            INSERT INTO projects (
+                project_id, name, symbol, image_uri, tagline, category, creator,
+                status, target_raise, token_price, ido_supply, total_supply,
+                deadline, tx_hash, created_at
+            )
+            VALUES (
+                $1, $2, $3, $4, '', 'general', $5,
+                'funding', $6::NUMERIC, $7::NUMERIC, $8::NUMERIC, $9::NUMERIC,
+                $10, $11, $12
+            )
+            ON CONFLICT (project_id) DO NOTHING
+            "#,
+        )
+        .bind(project_id)
+        .bind(name)
+        .bind(symbol)
+        .bind(token_uri)
+        .bind(creator)
+        .bind(&target_raise_display)
+        .bind(&price_display)
+        .bind(&ido_display)
+        .bind(&total_supply_display)
+        .bind(deadline)
+        .bind(tx_hash)
+        .bind(created_at)
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 
