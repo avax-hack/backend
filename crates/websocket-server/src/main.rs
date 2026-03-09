@@ -39,8 +39,9 @@ async fn main() -> anyhow::Result<()> {
     ])
     .await?;
 
-    // Initialize event producers.
+    // Initialize event producers and start periodic channel cleanup.
     let producers = event::EventProducers::new();
+    producers.spawn_cleanup_task();
 
     // Initialize price cache.
     let price_cache = Arc::new(cache::PriceCache::new());

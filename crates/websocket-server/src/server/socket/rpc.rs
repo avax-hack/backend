@@ -150,6 +150,29 @@ pub fn dispatch(
         "new_content_subscribe" => {
             handle_global_subscribe(request, &producers.new_content, conn, outbound_tx)
         }
+        "trade_unsubscribe" => {
+            handle_keyed_unsubscribe(request, "token_id", |id| SubscriptionKey::Trade(id), conn)
+        }
+        "price_unsubscribe" => {
+            handle_keyed_unsubscribe(request, "token_id", |id| SubscriptionKey::Price(id), conn)
+        }
+        "project_unsubscribe" => {
+            handle_keyed_unsubscribe(request, "project_id", |id| SubscriptionKey::Project(id), conn)
+        }
+        "milestone_unsubscribe" => {
+            handle_keyed_unsubscribe(request, "project_id", |id| SubscriptionKey::Milestone(id), conn)
+        }
+        "chart_unsubscribe" => {
+            handle_chart_unsubscribe(request, conn)
+        }
+        "new_content_unsubscribe" => {
+            let channel_key = SubscriptionKey::NewContent.to_channel_key();
+            let removed = conn.unsubscribe(&channel_key);
+            JsonRpcResponse::success(
+                request.id.clone(),
+                serde_json::json!({"unsubscribed": removed}),
+            )
+        }
         _ => JsonRpcResponse::error(
             request.id.clone(),
             -32601,
@@ -325,6 +348,70 @@ fn handle_chart_subscribe(
     JsonRpcResponse::success(
         request.id.clone(),
         serde_json::json!({"subscribed": true}),
+    )
+}
+
+/// Handle a keyed unsubscribe request.
+fn handle_keyed_unsubscribe(
+    request: &JsonRpcRequest,
+    param_name: &str,
+    make_key: impl FnOnce(String) -> SubscriptionKey,
+    conn: &mut ConnectionState,
+) -> JsonRpcResponse {
+    let id_value = request.params.get(param_name).and_then(|v| v.as_str());
+
+    let Some(raw_id) = id_value else {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32602,
+            format!("Missing required param: {param_name}"),
+        );
+    };
+
+    let normalized_id = raw_id.to_lowercase();
+    let sub_key = make_key(normalized_id);
+    let channel_key = sub_key.to_channel_key();
+    let removed = conn.unsubscribe(&channel_key);
+
+    JsonRpcResponse::success(
+        request.id.clone(),
+        serde_json::json!({"unsubscribed": removed}),
+    )
+}
+
+/// Handle chart unsubscribe with token_id and resolution parameters.
+fn handle_chart_unsubscribe(
+    request: &JsonRpcRequest,
+    conn: &mut ConnectionState,
+) -> JsonRpcResponse {
+    let token_id = request.params.get("token_id").and_then(|v| v.as_str());
+    let resolution = request.params.get("resolution").and_then(|v| v.as_str());
+
+    let Some(raw_id) = token_id else {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32602,
+            "Missing required param: token_id".to_string(),
+        );
+    };
+
+    let interval = resolve_interval(resolution.unwrap_or("1"));
+    let Some(interval) = interval else {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32602,
+            "Invalid resolution. Supported: 1, 5, 15, 60, 240, 1D".to_string(),
+        );
+    };
+
+    let normalized_id = raw_id.to_lowercase();
+    let sub_key = SubscriptionKey::Chart(normalized_id, interval.to_string());
+    let channel_key = sub_key.to_channel_key();
+    let removed = conn.unsubscribe(&channel_key);
+
+    JsonRpcResponse::success(
+        request.id.clone(),
+        serde_json::json!({"unsubscribed": removed}),
     )
 }
 

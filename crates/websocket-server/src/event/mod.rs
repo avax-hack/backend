@@ -18,6 +18,8 @@ use crate::config_local;
 pub trait EventProducer: Send + Sync {
     fn publish(&self, key: &str, event: WsEvent);
     fn subscribe(&self, key: &str) -> broadcast::Receiver<WsEvent>;
+    /// Remove channels with zero active subscribers.
+    fn cleanup_unused(&self);
 }
 
 /// Default implementation backed by a DashMap of broadcast channels.
@@ -47,22 +49,17 @@ impl BroadcastEventProducer {
 impl EventProducer for BroadcastEventProducer {
     fn publish(&self, key: &str, event: WsEvent) {
         let tx = self.get_or_create_sender(key);
-        if let Err(e) = tx.send(event) {
-            tracing::warn!(
-                channel = %key,
-                "Event dropped, no active subscribers for channel: {}",
-                e
-            );
-        }
-        // Bug 14 fix: Remove channels with no active subscribers to prevent unbounded growth.
-        if tx.receiver_count() == 0 {
-            self.channels.remove(key);
-        }
+        // Send returns Err when there are no receivers — this is normal.
+        let _ = tx.send(event);
     }
 
     fn subscribe(&self, key: &str) -> broadcast::Receiver<WsEvent> {
         let tx = self.get_or_create_sender(key);
         tx.subscribe()
+    }
+
+    fn cleanup_unused(&self) {
+        self.channels.retain(|_, tx| tx.receiver_count() > 0);
     }
 }
 
@@ -86,6 +83,26 @@ impl EventProducers {
             milestone: BroadcastEventProducer::new(),
             new_content: BroadcastEventProducer::new(),
         })
+    }
+
+    /// Periodically remove broadcast channels with zero subscribers.
+    pub fn spawn_cleanup_task(self: &Arc<Self>) {
+        let producers = Arc::clone(self);
+        let interval_secs = *config_local::WS_CLEANUP_INTERVAL_SECS;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(
+                std::time::Duration::from_secs(interval_secs),
+            );
+            loop {
+                interval.tick().await;
+                producers.trade.cleanup_unused();
+                producers.price.cleanup_unused();
+                producers.chart.cleanup_unused();
+                producers.project.cleanup_unused();
+                producers.milestone.cleanup_unused();
+                producers.new_content.cleanup_unused();
+            }
+        });
     }
 }
 

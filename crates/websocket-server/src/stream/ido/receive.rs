@@ -154,11 +154,11 @@ fn handle_tokens_purchased(
                 "type": "CHART_UPDATE",
                 "token_id": token,
                 "interval": interval,
-                "o": candle.open,
-                "h": candle.high,
-                "l": candle.low,
-                "c": candle.close,
-                "v": candle.volume,
+                "o": format!("{:.18}", candle.open),
+                "h": format!("{:.18}", candle.high),
+                "l": format!("{:.18}", candle.low),
+                "c": format!("{:.18}", candle.close),
+                "v": format!("{:.2}", candle.volume),
                 "t": candle.time,
             });
             let chart_key = SubscriptionKey::Chart(token.clone(), interval.to_string()).to_channel_key();
