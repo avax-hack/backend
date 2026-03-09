@@ -92,13 +92,22 @@ async fn handle_tokens_purchased(
     let usdc_amount = event.usdcAmount.to_string();
     let token_amount = event.tokenAmount.to_string();
 
-    // Fetch market info from DB
+    // Fetch market info from DB and add current purchase amount
+    // (observer may not have processed this event yet)
     let market_info = match project_ctrl::fetch_market_snapshot(db_pool, &token).await {
         Ok(Some(snapshot)) => {
             let target_f: f64 = snapshot.target_raise.parse().unwrap_or(0.0);
-            let committed_f: f64 = snapshot.total_committed.parse().unwrap_or(0.0);
+            let db_committed: f64 = snapshot.total_committed.parse().unwrap_or(0.0);
+            let current_usdc: f64 = {
+                use openlaunch_shared::utils::price::wei_to_display;
+                wei_to_display(&usdc_amount, 6)
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.0)
+            };
+            let total_committed = db_committed + current_usdc;
             let funded_percent = if target_f > 0.0 {
-                (committed_f / target_f * 100.0).min(100.0)
+                (total_committed / target_f * 100.0).min(100.0)
             } else {
                 0.0
             };
@@ -106,9 +115,9 @@ async fn handle_tokens_purchased(
                 "project_id": snapshot.project_id,
                 "status": snapshot.status,
                 "target_raise": snapshot.target_raise,
-                "total_committed": snapshot.total_committed,
+                "total_committed": format!("{total_committed}"),
                 "funded_percent": funded_percent,
-                "investor_count": snapshot.investor_count,
+                "investor_count": snapshot.investor_count + 1,
             })
         }
         _ => serde_json::json!(null),
