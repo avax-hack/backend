@@ -7,6 +7,7 @@ use openlaunch_shared::db::postgres::controller::{
     account as account_ctrl, investment as investment_ctrl, market as market_ctrl,
     milestone as milestone_ctrl, refund as refund_ctrl,
 };
+use openlaunch_shared::db::redis::RedisDatabase;
 use openlaunch_shared::types::common::current_unix_timestamp;
 use openlaunch_shared::types::event::OnChainEvent;
 
@@ -24,6 +25,7 @@ pub async fn process_ido_events(
     pool: &PgPool,
     rx: &mut mpsc::Receiver<EventBatch<OnChainEvent>>,
     receive_mgr: &Arc<ReceiveManager>,
+    redis: &Arc<RedisDatabase>,
 ) -> Result<(), ObserverError> {
     while let Some(batch) = rx.recv().await {
         tracing::info!(
@@ -34,7 +36,7 @@ pub async fn process_ido_events(
         );
 
         for event in &batch.events {
-            if let Err(e) = handle_single_event(pool, event).await {
+            if let Err(e) = handle_single_event(pool, event, redis).await {
                 if e.is_skippable() {
                     tracing::warn!(error = %e, "Skipping IDO event");
                     continue;
@@ -49,9 +51,9 @@ pub async fn process_ido_events(
     Ok(())
 }
 
-async fn handle_single_event(pool: &PgPool, event: &OnChainEvent) -> Result<(), ObserverError> {
+async fn handle_single_event(pool: &PgPool, event: &OnChainEvent, redis: &Arc<RedisDatabase>) -> Result<(), ObserverError> {
     match event {
-        OnChainEvent::ProjectCreated(e) => handle_project_created(pool, e).await,
+        OnChainEvent::ProjectCreated(e) => handle_project_created(pool, e, redis).await,
         OnChainEvent::TokensPurchased(e) => handle_tokens_purchased(pool, e).await,
         OnChainEvent::Graduated(e) => handle_graduated(pool, e).await,
         OnChainEvent::MilestoneApproved(e) => handle_milestone_approved(pool, e).await,
@@ -64,6 +66,7 @@ async fn handle_single_event(pool: &PgPool, event: &OnChainEvent) -> Result<(), 
 async fn handle_project_created(
     pool: &PgPool,
     e: &openlaunch_shared::types::event::ProjectCreatedEvent,
+    redis: &Arc<RedisDatabase>,
 ) -> Result<(), ObserverError> {
     let now = current_unix_timestamp();
 
@@ -89,6 +92,11 @@ async fn handle_project_created(
     )
     .await
     .map_err(|err| ObserverError::retriable(err))?;
+
+    // Add token to Redis whitelist so the token stream picks it up immediately.
+    if let Err(err) = redis.whitelist_add_token(&e.token).await {
+        tracing::warn!(token = %e.token, error = %err, "Failed to add token to Redis whitelist");
+    }
 
     // Create initial market_data row with total_supply and token_price
     use openlaunch_shared::utils::price::wei_to_display;

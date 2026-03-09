@@ -1,6 +1,7 @@
 pub mod session;
 pub mod cache;
 pub mod rate_limit;
+pub mod whitelist;
 
 use redis::aio::ConnectionManager;
 
