@@ -55,25 +55,25 @@ pub fn handle_swap_log(
     let amount0: i128 = event.amount0;
     let amount1: i128 = event.amount1;
 
-    let (native_amount, token_amount, event_type): (u128, u128, &str) = if mapping.is_token0 {
+    let (usdc_amount, token_amount, event_type): (u128, u128, &str) = if mapping.is_token0 {
         let token_amt = amount0.unsigned_abs();
-        let native_amt = amount1.unsigned_abs();
+        let usdc_amt = amount1.unsigned_abs();
         let evt = if amount0 > 0 { "BUY" } else { "SELL" };
-        (native_amt, token_amt, evt)
+        (usdc_amt, token_amt, evt)
     } else {
         let token_amt = amount1.unsigned_abs();
-        let native_amt = amount0.unsigned_abs();
+        let usdc_amt = amount0.unsigned_abs();
         let evt = if amount1 > 0 { "BUY" } else { "SELL" };
-        (native_amt, token_amt, evt)
+        (usdc_amt, token_amt, evt)
     };
 
     if token_amount == 0 {
         return Ok(());
     }
 
-    // price = (native / 1e6) / (token / 1e18) = native * 1e12 / token
-    let price = (native_amount as f64 * 1e12) / token_amount as f64;
-    let volume = native_amount as f64;
+    // price = (usdc / 1e6) / (token / 1e18) = usdc * 1e12 / token
+    let price = (usdc_amount as f64 * 1e12) / token_amount as f64;
+    let volume = usdc_amount as f64;
     let token_id = &mapping.token_id;
 
     let price_str = format!("{price:.18}");
@@ -116,13 +116,13 @@ pub fn handle_swap_log(
     }
 
     // Broadcast trade event
-    let sender = format!("{:#x}", event.sender);
+    let buyer = format!("{:#x}", event.sender);
     let trade_data = serde_json::json!({
         "type": "TRADE",
         "token": token_lower,
-        "sender": sender,
+        "buyer": buyer,
         "event_type": event_type,
-        "native_amount": native_amount.to_string(),
+        "usdc_amount": usdc_amount.to_string(),
         "token_amount": token_amount.to_string(),
     });
     let trade_key = SubscriptionKey::Trade(token_lower.clone()).to_channel_key();
@@ -138,6 +138,8 @@ pub fn handle_swap_log(
     let price_data = serde_json::json!({
         "type": "PRICE_UPDATE",
         "token_id": token_lower,
+        "usdc_amount": usdc_amount.to_string(),
+        "token_amount": token_amount.to_string(),
         "price": price_str,
     });
     let price_key = SubscriptionKey::Price(token_lower.clone()).to_channel_key();
