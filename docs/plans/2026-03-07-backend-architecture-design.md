@@ -229,7 +229,6 @@ pub struct IProjectInfo {
     pub symbol: String,
     pub image_uri: String,
     pub description: Option<String>,
-    pub tagline: String,
     pub category: String,             // "defi"|"infra"|"ai"|"gaming"|"social"|"meme"
     pub creator: IAccountInfo,
     pub website: Option<String>,
@@ -1145,7 +1144,7 @@ CREATE TABLE projects (
     symbol          VARCHAR(10) NOT NULL UNIQUE,
     image_uri       TEXT NOT NULL,
     description     TEXT,
-    tagline         VARCHAR(120) NOT NULL,
+
     category        VARCHAR(20) NOT NULL,
     creator         VARCHAR(42) NOT NULL REFERENCES accounts(account_id),
     status          VARCHAR(20) NOT NULL DEFAULT 'funding',  -- funding/active/completed/failed

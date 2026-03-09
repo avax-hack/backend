@@ -261,7 +261,7 @@ Get full project details including milestones.
     "symbol": "string",
     "image_uri": "string",
     "description": "string | null",
-    "tagline": "string",
+
     "category": "string",
     "creator": { <IAccountInfo> },
     "website": "string | null",
@@ -295,7 +295,7 @@ Create a new project.
 {
   "name": "string (2-50 chars)",
   "symbol": "string (2-10 chars, uppercase + digits only)",
-  "tagline": "string (5-120 chars)",
+
   "description": "string (min 20 chars)",
   "image_uri": "string (required)",
   "website": "string | null",

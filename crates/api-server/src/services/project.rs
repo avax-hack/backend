@@ -163,7 +163,6 @@ pub async fn create_project(
         &request.symbol,
         &request.image_uri,
         Some(&request.description),
-        "",
         &request.category,
         creator,
         &target_raise_bd.to_string(),

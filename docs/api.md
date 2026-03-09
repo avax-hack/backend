@@ -182,7 +182,7 @@ Set-Cookie 헤더: `session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax`
         "symbol": "ASWAP",
         "image_uri": "https://storage.openlaunch.io/images/aswap.png",
         "description": null,
-        "tagline": "Next-gen DEX on Avalanche",
+
         "category": "defi",
         "creator": {
           "account_id": "0x1234567890abcdef1234567890abcdef12345678",
@@ -231,7 +231,7 @@ Set-Cookie 헤더: `session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax`
 |-------|------|----------|-------------|
 | name | string | Yes | 프로젝트명 (2-50자) |
 | symbol | string | Yes | 토큰 심볼 (2-10자, 대문자+숫자만) |
-| tagline | string | Yes | 한 줄 소개 (5-120자) |
+
 | description | string | Yes | 상세 설명 (20자 이상) |
 | image_uri | string | Yes | 프로젝트 이미지 URI |
 | website | string | No | 웹사이트 URL |
@@ -255,7 +255,7 @@ Set-Cookie 헤더: `session=; HttpOnly; Secure; Path=/; Max-Age=0; SameSite=Lax`
 {
   "name": "AvalancheSwap",
   "symbol": "ASWAP",
-  "tagline": "Next-gen DEX on Avalanche C-Chain",
+
   "description": "A decentralized exchange built on Avalanche with milestone-based funding and investor protection.",
   "image_uri": "https://storage.openlaunch.io/images/aswap.png",
   "website": "https://avalancheswap.io",
@@ -412,7 +412,6 @@ GET /project/0x7a3b9c2e1f4d5a6b8c0e9f1a2b3c4d5e6f7a8b9c
     "symbol": "ASWAP",
     "image_uri": "https://storage.openlaunch.io/images/aswap.png",
     "description": "A decentralized exchange built on Avalanche with milestone-based funding.",
-    "tagline": "Next-gen DEX on Avalanche",
     "category": "defi",
     "creator": {
       "account_id": "0x1234567890abcdef1234567890abcdef12345678",
@@ -704,7 +703,7 @@ GET /order/project/funded?page=1&limit=10&status=funding
         "symbol": "ASWAP",
         "image_uri": "https://storage.openlaunch.io/images/aswap.png",
         "description": null,
-        "tagline": "Next-gen DEX on Avalanche",
+
         "category": "defi",
         "creator": { "account_id": "0x1234...5678", "nickname": "alice_builder", "bio": "", "image_uri": "" },
         "website": null,
@@ -1283,7 +1282,7 @@ GET /trade/quote/0x7a3b9c2e?amount=1000&type=BUY&slippage=1.5
         "symbol": "ASWAP",
         "image_uri": "https://storage.openlaunch.io/images/aswap.png",
         "description": null,
-        "tagline": "Next-gen DEX on Avalanche",
+
         "category": "defi",
         "creator": { "account_id": "0x1234...5678", "nickname": "", "bio": "", "image_uri": "" },
         "website": null,
@@ -1352,7 +1351,7 @@ GET /trade/quote/0x7a3b9c2e?amount=1000&type=BUY&slippage=1.5
         "symbol": "FAIL",
         "image_uri": "https://storage.openlaunch.io/images/fail.png",
         "description": null,
-        "tagline": "This project failed",
+
         "category": "gaming",
         "creator": { "account_id": "0xbad...creator", "nickname": "", "bio": "", "image_uri": "" },
         "website": null,
@@ -1774,7 +1773,7 @@ OK
   "symbol": "string",
   "image_uri": "string",
   "description": "string | null",
-  "tagline": "string",
+
   "category": "string",
   "creator": "IAccountInfo",
   "website": "string | null",

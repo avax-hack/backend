@@ -241,7 +241,6 @@ pub struct IProjectInfo {
     pub symbol: String,
     pub image_uri: String,
     pub description: Option<String>,
-    pub tagline: String,
     pub category: String,
     pub creator: IAccountInfo,
     pub website: Option<String>,
@@ -279,7 +278,6 @@ Combines `IProjectInfo`, `IProjectMarketInfo`, `milestone_completed: i32`, `mile
 pub struct CreateProjectRequest {
     pub name: String,           // 2-50 chars
     pub symbol: String,         // 2-10 chars, uppercase+digits only
-    pub tagline: String,        // 5-120 chars
     pub description: String,    // >= 20 chars
     pub image_uri: String,      // non-empty
     pub website: Option<String>,
@@ -583,7 +581,7 @@ Constructed via `PostgresDatabase::new(primary_url, replica_url)`.
 | `symbol` | TEXT | Unique |
 | `image_uri` | TEXT | |
 | `description` | TEXT | Nullable |
-| `tagline` | TEXT | |
+
 | `category` | TEXT | |
 | `creator` | TEXT | Account address |
 | `status` | TEXT | `funding`, `active`, `completed`, `failed` |

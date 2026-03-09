@@ -5,7 +5,7 @@ use crate::types::common::PaginationParams;
 pub async fn find_by_id(pool: &PgPool, project_id: &str) -> anyhow::Result<Option<ProjectRow>> {
     let row = sqlx::query_as::<_, ProjectRow>(
         r#"
-        SELECT project_id, name, symbol, image_uri, description, tagline, category,
+        SELECT project_id, name, symbol, image_uri, description, category,
                creator, status, target_raise::TEXT, token_price::TEXT,
                ido_supply::TEXT, ido_sold::TEXT, total_supply::TEXT,
                usdc_raised::TEXT, usdc_released::TEXT, tokens_refunded::TEXT,
@@ -71,7 +71,7 @@ pub async fn find_list_filtered(
     // Use the computed order_clause for dynamic sorting.
     let query = format!(
         r#"
-        SELECT p.project_id, p.name, p.symbol, p.image_uri, p.tagline, p.category,
+        SELECT p.project_id, p.name, p.symbol, p.image_uri, p.category,
                p.creator, p.status, p.target_raise::TEXT, p.usdc_raised::TEXT,
                p.created_at,
                COALESCE((SELECT COUNT(*) FROM investments i WHERE i.project_id = p.project_id), 0) as investor_count
@@ -121,7 +121,6 @@ pub async fn insert(
     symbol: &str,
     image_uri: &str,
     description: Option<&str>,
-    tagline: &str,
     category: &str,
     creator: &str,
     target_raise: &str,
@@ -135,7 +134,7 @@ pub async fn insert(
     created_at: i64,
 ) -> anyhow::Result<()> {
     insert_with_executor(
-        pool, project_id, name, symbol, image_uri, description, tagline, category,
+        pool, project_id, name, symbol, image_uri, description, category,
         creator, target_raise, ido_supply, total_supply, deadline, website, twitter,
         github, telegram, created_at,
     )
@@ -150,7 +149,6 @@ pub async fn insert_with_tx(
     symbol: &str,
     image_uri: &str,
     description: Option<&str>,
-    tagline: &str,
     category: &str,
     creator: &str,
     target_raise: &str,
@@ -164,7 +162,7 @@ pub async fn insert_with_tx(
     created_at: i64,
 ) -> anyhow::Result<()> {
     insert_with_executor(
-        &mut **tx, project_id, name, symbol, image_uri, description, tagline, category,
+        &mut **tx, project_id, name, symbol, image_uri, description, category,
         creator, target_raise, ido_supply, total_supply, deadline, website, twitter,
         github, telegram, created_at,
     )
@@ -178,7 +176,6 @@ async fn insert_with_executor<'e, E: sqlx::Executor<'e, Database = sqlx::Postgre
     symbol: &str,
     image_uri: &str,
     description: Option<&str>,
-    tagline: &str,
     category: &str,
     creator: &str,
     target_raise: &str,
@@ -199,10 +196,10 @@ async fn insert_with_executor<'e, E: sqlx::Executor<'e, Database = sqlx::Postgre
             total_supply, usdc_raised, usdc_released, tokens_refunded,
             deadline, website, twitter, github, telegram, created_at, tx_hash
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7,
-            $8, 'funding', $9::NUMERIC, 0, $10::NUMERIC, 0,
-            $11::NUMERIC, 0, 0, 0,
-            $12, $13, $14, $15, $16, $17, ''
+            $1, $2, $3, $4, $5, '', $6,
+            $7, 'funding', $8::NUMERIC, 0, $9::NUMERIC, 0,
+            $10::NUMERIC, 0, 0, 0,
+            $11, $12, $13, $14, $15, $16, ''
         )
         "#,
     )
@@ -211,7 +208,6 @@ async fn insert_with_executor<'e, E: sqlx::Executor<'e, Database = sqlx::Postgre
     .bind(symbol)
     .bind(image_uri)
     .bind(description)
-    .bind(tagline)
     .bind(category)
     .bind(creator)
     .bind(target_raise)
@@ -273,7 +269,6 @@ pub struct ProjectRow {
     pub symbol: String,
     pub image_uri: String,
     pub description: Option<String>,
-    pub tagline: String,
     pub category: String,
     pub creator: String,
     pub status: String,
@@ -300,7 +295,6 @@ pub struct ProjectListRow {
     pub name: String,
     pub symbol: String,
     pub image_uri: String,
-    pub tagline: String,
     pub category: String,
     pub creator: String,
     pub status: String,
@@ -322,7 +316,7 @@ mod tests {
             symbol: "TP".to_string(),
             image_uri: "img.png".to_string(),
             description: Some("A project".to_string()),
-            tagline: "Test".to_string(),
+
             category: "defi".to_string(),
             creator: "0xcreator".to_string(),
             status: "funding".to_string(),
@@ -355,7 +349,7 @@ mod tests {
             symbol: "MIN".to_string(),
             image_uri: "".to_string(),
             description: None,
-            tagline: "Minimal project".to_string(),
+
             category: "other".to_string(),
             creator: "0x1".to_string(),
             status: "active".to_string(),
@@ -387,7 +381,7 @@ mod tests {
             name: "Proj".to_string(),
             symbol: "P".to_string(),
             image_uri: "i.png".to_string(),
-            tagline: "Tag".to_string(),
+
             category: "gaming".to_string(),
             creator: "0xc".to_string(),
             status: "funding".to_string(),
@@ -408,7 +402,7 @@ mod tests {
             symbol: "S".to_string(),
             image_uri: "".to_string(),
             description: None,
-            tagline: "t".to_string(),
+
             category: "c".to_string(),
             creator: "0x".to_string(),
             status: "funding".to_string(),
