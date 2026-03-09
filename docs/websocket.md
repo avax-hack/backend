@@ -14,12 +14,23 @@
   - [project_subscribe](#project_subscribe)
   - [milestone_subscribe](#milestone_subscribe)
   - [new_content_subscribe](#new_content_subscribe)
+  - [chart_subscribe](#chart_subscribe)
+- [Unsubscribe Methods](#unsubscribe-methods)
+  - [trade_unsubscribe](#trade_unsubscribe)
+  - [price_unsubscribe](#price_unsubscribe)
+  - [project_unsubscribe](#project_unsubscribe)
+  - [milestone_unsubscribe](#milestone_unsubscribe)
+  - [chart_unsubscribe](#chart_unsubscribe)
+  - [new_content_unsubscribe](#new_content_unsubscribe)
 - [Event Payloads](#event-payloads)
   - [Trade Events](#trade-events)
+  - [DEX Trade Events](#dex-trade-events)
   - [Price Events](#price-events)
   - [Project Events](#project-events)
   - [Milestone Events](#milestone-events)
   - [New Content Events](#new-content-events)
+  - [CHART_UPDATE](#chart_update)
+  - [SUBSCRIPTION_ERROR](#subscription_error)
 - [Error Codes](#error-codes)
 - [Configuration](#configuration)
 
@@ -34,14 +45,17 @@ ws://127.0.0.1:8001/ws
 | 제한 사항 | 값 |
 |---|---|
 | 최대 동시 연결 수 | 1,000 (환경변수로 변경 가능) |
+| 연결당 최대 구독 수 | 100 (환경변수로 변경 가능) |
 | 최대 메시지 크기 | 16 KB |
 | 아웃바운드 버퍼 | 연결당 256 메시지 |
 | 브로드캐스트 채널 버퍼 | 1,024 이벤트 |
+| Rate Limit | 10초당 최대 60 메시지 |
 
-- 연결 시 자동으로 Ping/Pong 처리
+- 서버가 30초마다 ping 메시지 전송, 응답 없으면 연결 종료
 - 연결 해제 시 모든 구독 자동 정리
 - 동일 채널 재구독 시 기존 구독 교체
-- 브로드캐스트 버퍼 초과(lag) 시 구독 자동 해제 — 재구독 필요
+- 브로드캐스트 버퍼 초과(lag) 시 SUBSCRIPTION_ERROR 이벤트 전송 후 구독 해제 — 재구독 필요
+- Rate limit 초과 시 에러 코드 -32000 반환
 
 ---
 
@@ -97,7 +111,7 @@ ws://127.0.0.1:8001/ws
 
 ### trade_subscribe
 
-토큰별 거래 이벤트 구독 (IDO 매수, LP 할당, 수수료 수집)
+토큰별 거래 이벤트 구독 (IDO 매수, DEX 스왑, LP 할당, 수수료 수집)
 
 ```json
 {
@@ -201,13 +215,118 @@ ws://127.0.0.1:8001/ws
 
 ---
 
+### chart_subscribe
+
+토큰별 차트 캔들 업데이트 구독
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "chart_subscribe",
+  "params": { "token_id": "0xabc...", "resolution": "1" },
+  "id": 6
+}
+```
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `token_id` | string | Yes | 토큰 컨트랙트 주소 |
+| `resolution` | string | No | 차트 간격 (기본값: "1"). 지원: "1", "5", "15", "60", "240", "1D" |
+
+채널 키: `chart:{token_id}:{interval}`
+수신 이벤트: `CHART_UPDATE`
+
+---
+
+## Unsubscribe Methods
+
+구독을 해제하려면 해당 `_unsubscribe` 메서드를 호출합니다.
+
+### trade_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "trade_unsubscribe",
+  "params": { "token_id": "0xabc..." },
+  "id": 1
+}
+```
+
+### price_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "price_unsubscribe",
+  "params": { "token_id": "0xabc..." },
+  "id": 1
+}
+```
+
+### project_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "project_unsubscribe",
+  "params": { "project_id": "0xabc..." },
+  "id": 1
+}
+```
+
+### milestone_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "milestone_unsubscribe",
+  "params": { "project_id": "0xabc..." },
+  "id": 1
+}
+```
+
+### chart_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "chart_unsubscribe",
+  "params": { "token_id": "0xabc...", "resolution": "1" },
+  "id": 1
+}
+```
+
+### new_content_unsubscribe
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "new_content_unsubscribe",
+  "params": {},
+  "id": 1
+}
+```
+
+### Response (성공)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": { "unsubscribed": true },
+  "id": 1
+}
+```
+
+---
+
 ## Event Payloads
 
 ### Trade Events
 
 #### TRADE
 
-IDO 토큰 매수 시 발생
+IDO 토큰 매수 또는 DEX 스왑 시 발생
 
 ```json
 {
@@ -225,9 +344,11 @@ IDO 토큰 매수 시 발생
 | `type` | string | `"TRADE"` |
 | `token` | string | 토큰 주소 |
 | `buyer` | string | 구매자 주소 |
-| `event_type` | string | `"BUY"` |
+| `event_type` | string | `"BUY"` 또는 `"SELL"` |
 | `usdc_amount` | string | USDC 수량 (6 decimals) |
 | `token_amount` | string | 토큰 수량 (18 decimals) |
+
+> DEX 스왑의 경우 Uniswap V4 이벤트 기반 (positive amount = SELL, negative = BUY)
 
 #### LIQUIDITY_ALLOCATED
 
@@ -416,6 +537,53 @@ LP 수수료 수집 시 발생
 
 ---
 
+### CHART_UPDATE
+
+차트 캔들 데이터 업데이트 시 발생
+
+```json
+{
+  "type": "CHART_UPDATE",
+  "token_id": "0xtoken...",
+  "interval": "1m",
+  "o": "20000000000000.000000000000000000",
+  "h": "21000000000000.000000000000000000",
+  "l": "19500000000000.000000000000000000",
+  "c": "20500000000000.000000000000000000",
+  "v": "1500000.00",
+  "t": 1709856000
+}
+```
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `type` | string | `"CHART_UPDATE"` |
+| `token_id` | string | 토큰 주소 (소문자) |
+| `interval` | string | 캔들 간격 (`1m`, `5m`, `15m`, `1h`, `4h`, `1d`) |
+| `o` | string | 시가 (Open) |
+| `h` | string | 고가 (High) |
+| `l` | string | 저가 (Low) |
+| `c` | string | 종가 (Close) |
+| `v` | string | 거래량 (Volume) |
+| `t` | integer | 캔들 시작 Unix 타임스탬프 |
+
+---
+
+### SUBSCRIPTION_ERROR
+
+브로드캐스트 버퍼 초과 시 클라이언트에게 전송되며, 이후 해당 구독이 자동 해제됩니다. 재구독이 필요합니다.
+
+```json
+{
+  "type": "SUBSCRIPTION_ERROR",
+  "error": "lagged",
+  "missed": 50,
+  "message": "Subscription terminated due to slow consumption"
+}
+```
+
+---
+
 ## Error Codes
 
 | 코드 | 메시지 | 설명 |
@@ -424,6 +592,8 @@ LP 수수료 수집 시 발생
 | `-32600` | Invalid Request | 요청 형식 오류 (`jsonrpc: "2.0"` 누락, 메시지 크기 초과 >16KB 등) |
 | `-32601` | Method not found | 존재하지 않는 메서드 |
 | `-32602` | Invalid params | 필수 파라미터 누락 (`token_id`, `project_id`) |
+| `-32000` | Rate limit exceeded | 10초당 60 메시지 제한 초과 |
+| `-32000` | Subscription limit reached | 연결당 최대 구독 수 초과 |
 
 ---
 
@@ -436,6 +606,7 @@ LP 수수료 수집 시 발생
 | Project | `project_subscribe` | `project:{project_id}` | PROJECT_CREATED, TOKENS_PURCHASED, GRADUATED, PROJECT_FAILED, REFUNDED, MILESTONE_APPROVED |
 | Milestone | `milestone_subscribe` | `milestone:{project_id}` | MILESTONE_APPROVED |
 | New Content | `new_content_subscribe` | `new_content` | PROJECT_CREATED, GRADUATED, PROJECT_FAILED, LIQUIDITY_ALLOCATED |
+| Chart | `chart_subscribe` | `chart:{token_id}:{interval}` | CHART_UPDATE |
 
 ---
 
@@ -446,13 +617,14 @@ LP 수수료 수집 시 발생
 | 컨트랙트 이벤트 | 발행 채널 |
 |---|---|
 | IDO.ProjectCreated | `project:{token}`, `new_content` |
-| IDO.TokensPurchased | `project:{token}`, `trade:{token}`, `price:{token}` |
+| IDO.TokensPurchased | `project:{token}`, `trade:{token}`, `price:{token}`, `chart:{token}:{interval}` |
 | IDO.Graduated | `project:{token}`, `new_content` |
 | IDO.MilestoneApproved | `milestone:{token}`, `project:{token}` |
 | IDO.ProjectFailed | `project:{token}`, `new_content` |
 | IDO.Refunded | `project:{token}` |
 | LpManager.LiquidityAllocated | `trade:{token}`, `new_content` |
 | LpManager.FeesCollected | `trade:{token}` |
+| PoolManager.Swap | `trade:{token}`, `price:{token}`, `chart:{token}:{interval}` |
 
 ---
 
@@ -465,6 +637,9 @@ LP 수수료 수집 시 발생
 | `WS_MAX_CONNECTIONS` | `1000` | 최대 동시 연결 수 |
 | `WS_CHANNEL_SIZE` | `1024` | 브로드캐스트 채널 버퍼 크기 |
 | `WS_CLEANUP_INTERVAL_SECS` | `300` | 비활성 구독 정리 주기 (초) |
+| `WS_CORS_ORIGIN` | `*` (permissive) | CORS 허용 Origin (콤마 구분) |
+| `WS_MAX_SUBSCRIPTIONS_PER_CONN` | `100` | 연결당 최대 구독 수 |
+| `DATABASE_URL` | (필수) | PostgreSQL 데이터베이스 연결 URL |
 
 ---
 
@@ -496,6 +671,22 @@ ws.onopen = () => {
     method: "new_content_subscribe",
     params: {},
     id: 3
+  }));
+
+  // 4. 차트 구독 (1분 캔들)
+  ws.send(JSON.stringify({
+    jsonrpc: "2.0",
+    method: "chart_subscribe",
+    params: { token_id: "0xabc123", resolution: "1" },
+    id: 4
+  }));
+
+  // 5. 구독 해제
+  ws.send(JSON.stringify({
+    jsonrpc: "2.0",
+    method: "trade_unsubscribe",
+    params: { token_id: "0xabc123" },
+    id: 5
   }));
 };
 
