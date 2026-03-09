@@ -238,6 +238,34 @@ pub async fn update_status(pool: &PgPool, project_id: &str, status: &str) -> any
     Ok(())
 }
 
+/// Lightweight market info for a project (used by WebSocket broadcasts).
+pub async fn fetch_market_snapshot(pool: &PgPool, project_id: &str) -> anyhow::Result<Option<ProjectMarketSnapshot>> {
+    let row = sqlx::query_as::<_, ProjectMarketSnapshot>(
+        r#"
+        SELECT p.project_id, p.status,
+               COALESCE(p.target_raise::TEXT, '0') AS target_raise,
+               COALESCE(p.usdc_raised::TEXT, '0') AS total_committed,
+               COALESCE((SELECT COUNT(*) FROM investments i WHERE i.project_id = p.project_id), 0) AS investor_count
+        FROM projects p
+        WHERE p.project_id = $1
+        "#,
+    )
+    .bind(project_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ProjectMarketSnapshot {
+    pub project_id: String,
+    pub status: String,
+    pub target_raise: String,
+    pub total_committed: String,
+    pub investor_count: i64,
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct ProjectRow {
     pub project_id: String,

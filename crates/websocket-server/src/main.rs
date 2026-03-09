@@ -61,8 +61,9 @@ async fn main() -> anyhow::Result<()> {
     let ido_producers = Arc::clone(&producers);
     let ido_cache = Arc::clone(&price_cache);
     let ido_candle = Arc::clone(&candle_mgr);
+    let ido_db = db_pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = stream::ido::stream::start_ido_stream(ido_producers, ido_cache, ido_candle).await {
+        if let Err(e) = stream::ido::stream::start_ido_stream(ido_producers, ido_cache, ido_candle, ido_db).await {
             tracing::error!(error = %e, "IDO stream terminated with error");
         }
     });

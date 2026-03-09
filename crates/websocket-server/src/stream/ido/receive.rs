@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEvent;
+use sqlx::PgPool;
 
 use openlaunch_shared::contracts::ido::IIDO;
+use openlaunch_shared::db::postgres::controller::project as project_ctrl;
 
 use crate::cache::PriceCache;
 use crate::candle::CandleManager;
@@ -12,11 +14,12 @@ use crate::event::core::{SubscriptionKey, WsEvent};
 
 /// Handle a raw log from the IDO contract. Parses the event and forwards
 /// it to the appropriate event producers.
-pub fn handle_ido_log(
+pub async fn handle_ido_log(
     log: &Log,
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
     candle_mgr: &Arc<CandleManager>,
+    db_pool: &PgPool,
 ) -> anyhow::Result<()> {
     let topics = log.topics();
     if topics.is_empty() {
@@ -30,7 +33,7 @@ pub fn handle_ido_log(
         handle_project_created(&decoded.inner.data, producers);
     } else if signature == IIDO::TokensPurchased::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::TokensPurchased>()?;
-        handle_tokens_purchased(&decoded.inner.data, producers, price_cache, candle_mgr);
+        handle_tokens_purchased(&decoded.inner.data, producers, price_cache, candle_mgr, db_pool).await;
     } else if signature == IIDO::Graduated::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::Graduated>()?;
         handle_graduated(&decoded.inner.data, producers);
@@ -77,24 +80,48 @@ fn handle_project_created(event: &IIDO::ProjectCreated, producers: &Arc<EventPro
     tracing::info!(token = %token, "ProjectCreated event forwarded");
 }
 
-fn handle_tokens_purchased(
+async fn handle_tokens_purchased(
     event: &IIDO::TokensPurchased,
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
     candle_mgr: &Arc<CandleManager>,
+    db_pool: &PgPool,
 ) {
     let token = format!("{:#x}", event.token);
     let buyer = format!("{:#x}", event.buyer);
     let usdc_amount = event.usdcAmount.to_string();
     let token_amount = event.tokenAmount.to_string();
 
-    // Publish to project channel (existing behavior).
+    // Fetch market info from DB
+    let market_info = match project_ctrl::fetch_market_snapshot(db_pool, &token).await {
+        Ok(Some(snapshot)) => {
+            let target_f: f64 = snapshot.target_raise.parse().unwrap_or(0.0);
+            let committed_f: f64 = snapshot.total_committed.parse().unwrap_or(0.0);
+            let funded_percent = if target_f > 0.0 {
+                (committed_f / target_f * 100.0).min(100.0)
+            } else {
+                0.0
+            };
+            serde_json::json!({
+                "project_id": snapshot.project_id,
+                "status": snapshot.status,
+                "target_raise": snapshot.target_raise,
+                "total_committed": snapshot.total_committed,
+                "funded_percent": funded_percent,
+                "investor_count": snapshot.investor_count,
+            })
+        }
+        _ => serde_json::json!(null),
+    };
+
+    // Publish to project channel with market_info.
     let project_data = serde_json::json!({
         "type": "TOKENS_PURCHASED",
         "token": token,
         "buyer": buyer,
         "usdc_amount": usdc_amount,
         "token_amount": token_amount,
+        "market_info": market_info,
     });
 
     let project_key = SubscriptionKey::Project(token.clone()).to_channel_key();
