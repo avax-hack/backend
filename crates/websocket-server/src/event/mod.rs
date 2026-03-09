@@ -1,4 +1,5 @@
 pub mod core;
+pub mod chart;
 pub mod trade;
 pub mod price;
 pub mod project;
@@ -69,6 +70,7 @@ impl EventProducer for BroadcastEventProducer {
 pub struct EventProducers {
     pub trade: Arc<dyn EventProducer>,
     pub price: Arc<dyn EventProducer>,
+    pub chart: Arc<dyn EventProducer>,
     pub project: Arc<dyn EventProducer>,
     pub milestone: Arc<dyn EventProducer>,
     pub new_content: Arc<dyn EventProducer>,
@@ -79,6 +81,7 @@ impl EventProducers {
         Arc::new(Self {
             trade: BroadcastEventProducer::new(),
             price: BroadcastEventProducer::new(),
+            chart: BroadcastEventProducer::new(),
             project: BroadcastEventProducer::new(),
             milestone: BroadcastEventProducer::new(),
             new_content: BroadcastEventProducer::new(),

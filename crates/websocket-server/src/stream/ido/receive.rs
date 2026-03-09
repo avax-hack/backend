@@ -134,7 +134,26 @@ fn handle_tokens_purchased(
         data: price_data,
     });
 
-    tracing::info!(token = %token, buyer = %buyer, "TokensPurchased event forwarded to project, trade, and price channels");
+    // Publish chart bar update
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let bar_time = (now / 60) * 60;
+    let chart_data = serde_json::json!({
+        "type": "CHART_UPDATE",
+        "token_id": token,
+        "time": bar_time,
+        "price": price_str,
+        "volume": usdc_amount,
+    });
+    let chart_key = SubscriptionKey::Chart(token.clone()).to_channel_key();
+    producers.chart.publish(&chart_key, WsEvent {
+        method: "chart_subscribe".to_string(),
+        data: chart_data,
+    });
+
+    tracing::info!(token = %token, buyer = %buyer, "TokensPurchased event forwarded to project, trade, price, and chart channels");
 }
 
 fn handle_graduated(event: &IIDO::Graduated, producers: &Arc<EventProducers>) {

@@ -144,6 +144,16 @@ pub fn dispatch(
                 outbound_tx,
             )
         }
+        "chart_subscribe" => {
+            handle_keyed_subscribe(
+                request,
+                "token_id",
+                |id| SubscriptionKey::Chart(id),
+                &producers.chart,
+                conn,
+                outbound_tx,
+            )
+        }
         "new_content_subscribe" => {
             handle_global_subscribe(request, &producers.new_content, conn, outbound_tx)
         }

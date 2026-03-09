@@ -18,6 +18,8 @@ pub enum SubscriptionKey {
     Project(String),
     /// Milestone events for a specific project (token address).
     Milestone(String),
+    /// Chart bar updates for a specific token address.
+    Chart(String),
     /// Global broadcast for new content (new projects, graduations, etc.).
     NewContent,
 }
@@ -30,6 +32,7 @@ impl SubscriptionKey {
             Self::Price(id) => format!("price:{id}"),
             Self::Project(id) => format!("project:{id}"),
             Self::Milestone(id) => format!("milestone:{id}"),
+            Self::Chart(id) => format!("chart:{id}"),
             Self::NewContent => "new_content".to_string(),
         }
     }
