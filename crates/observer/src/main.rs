@@ -146,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
                 db.writer(),
                 &mut lp_rx,
                 &receive_mgr,
+                db.reader(),
             )
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))

@@ -8,11 +8,15 @@ use openlaunch_shared::db::postgres::controller::{
 };
 use openlaunch_shared::types::common::current_unix_timestamp;
 use openlaunch_shared::types::trading::ChartBar;
+use openlaunch_shared::utils::price::wei_to_display;
 
 use crate::event::core::{EventBatch, EventType};
 use crate::event::error::ObserverError;
 use crate::event::swap::stream::RawSwapEvent;
 use crate::sync::receive::ReceiveManager;
+
+const USDC_DECIMALS: u32 = 6;
+const TOKEN_DECIMALS: u32 = 18;
 
 /// Mapping from V4 pool ID to (token_address, is_token0).
 /// Loaded from DB based on LiquidityAllocated events.
@@ -126,7 +130,12 @@ async fn handle_swap(
             ObserverError::skippable(format!("Unknown pool ID: {}", event.pool_id))
         })?;
 
-    let (native_amount, token_amount, event_type) = parse_swap_amounts(event, mapping.is_token0);
+    let (raw_native, raw_token, event_type) = parse_swap_amounts(event, mapping.is_token0);
+
+    let native_amount = wei_to_display(&raw_native, USDC_DECIMALS)
+        .map_err(|e| ObserverError::skippable(format!("Invalid native amount: {e}")))?;
+    let token_amount = wei_to_display(&raw_token, TOKEN_DECIMALS)
+        .map_err(|e| ObserverError::skippable(format!("Invalid token amount: {e}")))?;
 
     let price = compute_price(&native_amount, &token_amount);
     let value = native_amount.clone();
@@ -240,11 +249,14 @@ fn max_numeric_str(existing: &str, new_val: &str) -> String {
 }
 
 fn compute_price(native_amount: &str, token_amount: &str) -> String {
-    let native: f64 = native_amount.parse().unwrap_or(0.0);
-    let token: f64 = token_amount.parse().unwrap_or(1.0);
-    if token == 0.0 {
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    let native = BigDecimal::from_str(native_amount).unwrap_or_default();
+    let token = BigDecimal::from_str(token_amount).unwrap_or_default();
+    if token == BigDecimal::from(0) {
         return "0".to_string();
     }
-    let price = (native * 1e12) / token;
-    format!("{price:.18}")
+    let price = native / token;
+    format!("{price}")
 }
