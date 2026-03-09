@@ -67,6 +67,22 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Initialize database pool for DEX stream pool mappings.
+    let database_url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL required for DEX stream");
+    let db_pool = sqlx::PgPool::connect(&database_url).await?;
+
+    // Spawn DEX Swap event stream.
+    let dex_producers = Arc::clone(&producers);
+    let dex_cache = Arc::clone(&price_cache);
+    let dex_candle = Arc::clone(&candle_mgr);
+    let dex_db = db_pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) = stream::dex::stream::start_dex_stream(dex_producers, dex_cache, dex_candle, dex_db).await {
+            tracing::error!(error = %e, "DEX stream terminated with error");
+        }
+    });
+
     // Build HTTP + WebSocket router.
     let max_connections: usize = std::env::var("WS_MAX_CONNECTIONS")
         .unwrap_or_else(|_| "1000".to_string())

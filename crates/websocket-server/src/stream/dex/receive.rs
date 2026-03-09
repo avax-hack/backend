@@ -1,0 +1,160 @@
+use std::sync::Arc;
+
+use alloy::rpc::types::Log;
+use alloy::sol;
+use alloy::sol_types::SolEvent;
+
+use crate::cache::PriceCache;
+use crate::candle::CandleManager;
+use crate::event::EventProducers;
+use crate::event::core::{SubscriptionKey, WsEvent};
+
+use super::stream::PoolMapping;
+
+// Uniswap V4 PoolManager Swap event.
+sol! {
+    event Swap(
+        bytes32 indexed id,
+        address indexed sender,
+        int128 amount0,
+        int128 amount1,
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        int24 tick,
+        uint24 fee
+    );
+}
+
+/// Handle a raw Swap log from the PoolManager contract.
+pub fn handle_swap_log(
+    log: &Log,
+    mappings: &[PoolMapping],
+    producers: &Arc<EventProducers>,
+    price_cache: &Arc<PriceCache>,
+    candle_mgr: &Arc<CandleManager>,
+) -> anyhow::Result<()> {
+    let topics = log.topics();
+    if topics.is_empty() {
+        return Ok(());
+    }
+
+    let signature = topics[0];
+    if signature != Swap::SIGNATURE_HASH {
+        return Ok(());
+    }
+
+    let decoded = log.log_decode::<Swap>()?;
+    let event = &decoded.inner;
+
+    let pool_id = format!("{:#x}", event.id);
+    let mapping = match mappings.iter().find(|m| m.pool_id == pool_id) {
+        Some(m) => m,
+        None => return Ok(()), // Unknown pool, skip
+    };
+
+    let amount0: i128 = event.amount0;
+    let amount1: i128 = event.amount1;
+
+    let (native_amount, token_amount, event_type): (u128, u128, &str) = if mapping.is_token0 {
+        let token_amt = amount0.unsigned_abs();
+        let native_amt = amount1.unsigned_abs();
+        let evt = if amount0 > 0 { "BUY" } else { "SELL" };
+        (native_amt, token_amt, evt)
+    } else {
+        let token_amt = amount1.unsigned_abs();
+        let native_amt = amount0.unsigned_abs();
+        let evt = if amount1 > 0 { "BUY" } else { "SELL" };
+        (native_amt, token_amt, evt)
+    };
+
+    if token_amount == 0 {
+        return Ok(());
+    }
+
+    // price = (native / 1e6) / (token / 1e18) = native * 1e12 / token
+    let price = (native_amount as f64 * 1e12) / token_amount as f64;
+    let volume = native_amount as f64;
+    let token_id = &mapping.token_id;
+
+    let price_str = format!("{price:.18}");
+    price_cache.set_price(token_id, price_str.clone());
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Update candles
+    candle_mgr.update(token_id, price, volume, now);
+
+    // Broadcast chart updates for all intervals
+    let token_lower = token_id.to_lowercase();
+    for &(interval, _) in CandleManager::intervals() {
+        if let Some(candle) = candle_mgr.get(&token_lower, interval) {
+            let chart_data = serde_json::json!({
+                "type": "CHART_UPDATE",
+                "token_id": token_lower,
+                "interval": interval,
+                "o": candle.open,
+                "h": candle.high,
+                "l": candle.low,
+                "c": candle.close,
+                "v": candle.volume,
+                "t": candle.time,
+            });
+            let chart_key =
+                SubscriptionKey::Chart(token_lower.clone(), interval.to_string())
+                    .to_channel_key();
+            producers.chart.publish(
+                &chart_key,
+                WsEvent {
+                    method: "chart_subscribe".to_string(),
+                    data: chart_data,
+                },
+            );
+        }
+    }
+
+    // Broadcast trade event
+    let sender = format!("{:#x}", event.sender);
+    let trade_data = serde_json::json!({
+        "type": "TRADE",
+        "token": token_lower,
+        "sender": sender,
+        "event_type": event_type,
+        "native_amount": native_amount.to_string(),
+        "token_amount": token_amount.to_string(),
+    });
+    let trade_key = SubscriptionKey::Trade(token_lower.clone()).to_channel_key();
+    producers.trade.publish(
+        &trade_key,
+        WsEvent {
+            method: "trade_subscribe".to_string(),
+            data: trade_data,
+        },
+    );
+
+    // Broadcast price update
+    let price_data = serde_json::json!({
+        "type": "PRICE_UPDATE",
+        "token_id": token_lower,
+        "price": price_str,
+    });
+    let price_key = SubscriptionKey::Price(token_lower.clone()).to_channel_key();
+    producers.price.publish(
+        &price_key,
+        WsEvent {
+            method: "price_subscribe".to_string(),
+            data: price_data,
+        },
+    );
+
+    tracing::info!(
+        token = %token_lower,
+        event_type = %event_type,
+        price = %price_str,
+        "DEX Swap event forwarded to chart, trade, and price channels"
+    );
+
+    Ok(())
+}
