@@ -256,17 +256,27 @@ fn handle_refunded(event: &IIDO::Refunded, producers: &Arc<EventProducers>) {
     });
 }
 
-/// Compute a basic price as usdc_amount / token_amount.
+/// Compute a basic price as usdc_amount / token_amount using BigDecimal
+/// to avoid f64 precision loss on large token amounts.
 /// Both values are expected as decimal integer strings.
 /// Returns "0" if inputs are invalid or token_amount is zero.
 fn compute_price(usdc_amount: &str, token_amount: &str) -> String {
-    let usdc: f64 = usdc_amount.parse().unwrap_or(0.0);
-    let tokens: f64 = token_amount.parse().unwrap_or(0.0);
-    if tokens == 0.0 {
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    let Ok(usdc) = BigDecimal::from_str(usdc_amount) else {
+        return "0".to_string();
+    };
+    let Ok(tokens) = BigDecimal::from_str(token_amount) else {
+        return "0".to_string();
+    };
+    if tokens == BigDecimal::from(0) {
         return "0".to_string();
     }
     // USDC has 6 decimals, token has 18 decimals.
     // price = (usdc / 1e6) / (tokens / 1e18) = usdc * 1e12 / tokens
-    let price = (usdc * 1e12) / tokens;
-    format!("{price:.18}")
+    let scale = BigDecimal::from_str("1000000000000").unwrap(); // 1e12
+    let price = (usdc * scale) / tokens;
+    // Round to 18 decimal places for consistent output.
+    format!("{}", price.round(18))
 }

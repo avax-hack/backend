@@ -42,19 +42,28 @@ async fn ws_upgrade_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
-    let current = state.connection_count.load(Ordering::SeqCst);
-    if current >= state.max_connections {
-        tracing::warn!(
-            current_connections = current,
-            max = state.max_connections,
-            "Connection limit reached, rejecting WebSocket upgrade"
-        );
-        return Err((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Too many connections".to_string(),
-        ));
+    // Atomically check-and-increment to prevent exceeding the limit under concurrency.
+    loop {
+        let current = state.connection_count.load(Ordering::SeqCst);
+        if current >= state.max_connections {
+            tracing::warn!(
+                current_connections = current,
+                max = state.max_connections,
+                "Connection limit reached, rejecting WebSocket upgrade"
+            );
+            return Err((
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Too many connections".to_string(),
+            ));
+        }
+        if state
+            .connection_count
+            .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            break;
+        }
     }
-    state.connection_count.fetch_add(1, Ordering::SeqCst);
     Ok(ws.on_upgrade(move |socket| handle_ws_connection(socket, state)))
 }
 

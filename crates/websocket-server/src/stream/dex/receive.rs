@@ -55,15 +55,19 @@ pub fn handle_swap_log(
     let amount0: i128 = event.amount0;
     let amount1: i128 = event.amount1;
 
+    // Uniswap V4 Swap event amounts: positive = tokens flow INTO pool,
+    // negative = tokens flow OUT of pool. So for our token:
+    //   amount < 0 → pool sends token to user → user BUYs
+    //   amount > 0 → user sends token to pool → user SELLs
     let (usdc_amount, token_amount, event_type): (u128, u128, &str) = if mapping.is_token0 {
         let token_amt = amount0.unsigned_abs();
         let usdc_amt = amount1.unsigned_abs();
-        let evt = if amount0 > 0 { "BUY" } else { "SELL" };
+        let evt = if amount0 < 0 { "BUY" } else { "SELL" };
         (usdc_amt, token_amt, evt)
     } else {
         let token_amt = amount1.unsigned_abs();
         let usdc_amt = amount0.unsigned_abs();
-        let evt = if amount1 > 0 { "BUY" } else { "SELL" };
+        let evt = if amount1 < 0 { "BUY" } else { "SELL" };
         (usdc_amt, token_amt, evt)
     };
 
@@ -72,11 +76,19 @@ pub fn handle_swap_log(
     }
 
     // price = (usdc / 1e6) / (token / 1e18) = usdc * 1e12 / token
-    let price = (usdc_amount as f64 * 1e12) / token_amount as f64;
+    // Use BigDecimal for precision with large amounts.
+    let price_str = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        let usdc_bd = BigDecimal::from(usdc_amount);
+        let token_bd = BigDecimal::from(token_amount);
+        let scale = BigDecimal::from_str("1000000000000").unwrap(); // 1e12
+        let price_bd = (usdc_bd * scale) / token_bd;
+        format!("{}", price_bd.round(18))
+    };
+    let price: f64 = price_str.parse().unwrap_or(0.0);
     let volume = usdc_amount as f64;
     let token_id = &mapping.token_id;
-
-    let price_str = format!("{price:.18}");
     price_cache.set_price(token_id, price_str.clone());
 
     let now = std::time::SystemTime::now()

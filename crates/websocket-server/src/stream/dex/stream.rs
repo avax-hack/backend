@@ -38,7 +38,10 @@ async fn load_mappings(db: &PgPool) -> Vec<PoolMapping> {
     )
     .fetch_all(db)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to load pool mappings from database");
+        Vec::new()
+    });
 
     rows.into_iter()
         .map(|r| PoolMapping {

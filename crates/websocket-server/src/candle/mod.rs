@@ -41,9 +41,10 @@ impl CandleManager {
     ///   `open` is never changed.
     /// - New time bucket: `open = previous close`, reset candle.
     pub fn update(&self, token_id: &str, price: f64, volume: f64, timestamp: i64) {
+        let token_lower = token_id.to_lowercase();
         for &(interval_label, interval_secs) in &INTERVALS {
             let bucket_time = timestamp - (timestamp % interval_secs);
-            let key = (token_id.to_string(), interval_label.to_string());
+            let key = (token_lower.clone(), interval_label.to_string());
 
             self.candles
                 .entry(key)
@@ -80,7 +81,7 @@ impl CandleManager {
     /// Retrieve the current candle for a token and interval.
     #[must_use]
     pub fn get(&self, token_id: &str, interval: &str) -> Option<Candle> {
-        let key = (token_id.to_string(), interval.to_string());
+        let key = (token_id.to_lowercase(), interval.to_string());
         self.candles.get(&key).map(|entry| *entry)
     }
 
@@ -104,7 +105,10 @@ impl CandleManager {
         )
         .fetch_all(db)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to load candles from database, starting with empty state");
+            Vec::new()
+        });
 
         let mut count = 0u64;
         for row in rows {
@@ -114,7 +118,7 @@ impl CandleManager {
             let close: f64 = row.close.parse().unwrap_or(0.0);
             let volume: f64 = row.volume.parse().unwrap_or(0.0);
 
-            let key = (row.token_id, row.interval);
+            let key = (row.token_id.to_lowercase(), row.interval);
             self.candles.insert(key, Candle {
                 time: row.time,
                 open,
