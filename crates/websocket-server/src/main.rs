@@ -45,8 +45,14 @@ async fn main() -> anyhow::Result<()> {
     // Initialize price cache.
     let price_cache = Arc::new(cache::PriceCache::new());
 
-    // Initialize in-memory candle manager.
+    // Initialize database pool.
+    let database_url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL required");
+    let db_pool = sqlx::PgPool::connect(&database_url).await?;
+
+    // Initialize in-memory candle manager and restore from DB.
     let candle_mgr = Arc::new(candle::CandleManager::new());
+    candle_mgr.load_from_db(&db_pool).await;
 
     // Spawn IDO event stream.
     let ido_producers = Arc::clone(&producers);
@@ -66,11 +72,6 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!(error = %e, "Pool stream terminated with error");
         }
     });
-
-    // Initialize database pool for DEX stream pool mappings.
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL required for DEX stream");
-    let db_pool = sqlx::PgPool::connect(&database_url).await?;
 
     // Spawn DEX Swap event stream.
     let dex_producers = Arc::clone(&producers);

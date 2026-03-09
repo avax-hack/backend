@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use sqlx::PgPool;
 
 /// Supported candle intervals: `(label, seconds)`.
 pub const INTERVALS: [(&str, i64); 6] = [
@@ -88,12 +89,63 @@ impl CandleManager {
     pub fn intervals() -> &'static [(&'static str, i64)] {
         &INTERVALS
     }
+
+    /// Load the latest candle per (token_id, interval) from the database.
+    /// Called once at startup so that candles survive server restarts.
+    pub async fn load_from_db(&self, db: &PgPool) {
+        let rows = sqlx::query_as::<_, LatestCandleRow>(
+            r#"
+            SELECT DISTINCT ON (token_id, interval)
+                   token_id, interval, time,
+                   open::TEXT, high::TEXT, low::TEXT, close::TEXT, volume::TEXT
+            FROM charts
+            ORDER BY token_id, interval, time DESC
+            "#,
+        )
+        .fetch_all(db)
+        .await
+        .unwrap_or_default();
+
+        let mut count = 0u64;
+        for row in rows {
+            let open: f64 = row.open.parse().unwrap_or(0.0);
+            let high: f64 = row.high.parse().unwrap_or(0.0);
+            let low: f64 = row.low.parse().unwrap_or(0.0);
+            let close: f64 = row.close.parse().unwrap_or(0.0);
+            let volume: f64 = row.volume.parse().unwrap_or(0.0);
+
+            let key = (row.token_id, row.interval);
+            self.candles.insert(key, Candle {
+                time: row.time,
+                open,
+                high,
+                low,
+                close,
+                volume,
+            });
+            count += 1;
+        }
+
+        tracing::info!(count, "Loaded candles from database");
+    }
 }
 
 impl Default for CandleManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct LatestCandleRow {
+    token_id: String,
+    interval: String,
+    time: i64,
+    open: String,
+    high: String,
+    low: String,
+    close: String,
+    volume: String,
 }
 
 #[cfg(test)]
