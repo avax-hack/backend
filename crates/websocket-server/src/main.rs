@@ -11,6 +11,7 @@ mod config_local;
 mod event;
 mod server;
 mod stream;
+mod candle;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
