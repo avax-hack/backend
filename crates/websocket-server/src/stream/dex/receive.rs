@@ -8,6 +8,7 @@ use crate::cache::PriceCache;
 use crate::candle::CandleManager;
 use crate::event::EventProducers;
 use crate::event::core::{SubscriptionKey, WsEvent};
+use crate::stream::update_and_broadcast_candles;
 
 use super::stream::PoolMapping;
 
@@ -96,38 +97,10 @@ pub fn handle_swap_log(
         .unwrap_or_default()
         .as_secs() as i64;
 
-    // Update candles
-    candle_mgr.update(token_id, price, volume, now);
-
-    // Broadcast chart updates for all intervals
-    let token_lower = token_id.to_lowercase();
-    for &(interval, _) in CandleManager::intervals() {
-        if let Some(candle) = candle_mgr.get(&token_lower, interval) {
-            let chart_data = serde_json::json!({
-                "type": "CHART_UPDATE",
-                "token_id": token_lower,
-                "interval": interval,
-                "o": format!("{:.18}", candle.open),
-                "h": format!("{:.18}", candle.high),
-                "l": format!("{:.18}", candle.low),
-                "c": format!("{:.18}", candle.close),
-                "v": format!("{:.2}", candle.volume),
-                "t": candle.time,
-            });
-            let chart_key =
-                SubscriptionKey::Chart(token_lower.clone(), interval.to_string())
-                    .to_channel_key();
-            producers.chart.publish(
-                &chart_key,
-                WsEvent {
-                    method: "chart_subscribe".to_string(),
-                    data: chart_data,
-                },
-            );
-        }
-    }
+    update_and_broadcast_candles(token_id, price, volume, now, candle_mgr, producers);
 
     // Broadcast trade event
+    let token_lower = token_id.to_lowercase();
     let buyer = format!("{:#x}", event.sender);
     let trade_data = serde_json::json!({
         "type": "TRADE",

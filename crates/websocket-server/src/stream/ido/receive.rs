@@ -145,29 +145,7 @@ fn handle_tokens_purchased(
         .unwrap_or_default()
         .as_secs() as i64;
 
-    candle_mgr.update(&token, price_f64, volume_f64, now);
-
-    // Broadcast updated candle for each interval
-    for &(interval, _) in CandleManager::intervals() {
-        if let Some(candle) = candle_mgr.get(&token, interval) {
-            let chart_data = serde_json::json!({
-                "type": "CHART_UPDATE",
-                "token_id": token,
-                "interval": interval,
-                "o": format!("{:.18}", candle.open),
-                "h": format!("{:.18}", candle.high),
-                "l": format!("{:.18}", candle.low),
-                "c": format!("{:.18}", candle.close),
-                "v": format!("{:.2}", candle.volume),
-                "t": candle.time,
-            });
-            let chart_key = SubscriptionKey::Chart(token.clone(), interval.to_string()).to_channel_key();
-            producers.chart.publish(&chart_key, WsEvent {
-                method: "chart_subscribe".to_string(),
-                data: chart_data,
-            });
-        }
-    }
+    crate::stream::update_and_broadcast_candles(&token, price_f64, volume_f64, now, candle_mgr, producers);
 
     tracing::info!(token = %token, buyer = %buyer, "TokensPurchased event forwarded to project, trade, and price channels");
 }

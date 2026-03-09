@@ -92,8 +92,17 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
         let _ = sink_done_tx.send(());
     });
 
+    // Ping/pong keep-alive: detect dead connections.
+    let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    ping_interval.tick().await; // skip immediate first tick
+
+    // Rate limiting: max messages per window.
+    const RATE_LIMIT_MAX: u32 = 60;
+    const RATE_LIMIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+    let mut rate_count: u32 = 0;
+    let mut rate_window_start = tokio::time::Instant::now();
+
     // Read loop: parse and dispatch incoming messages.
-    // Bug 13 fix: Also watch for sink task completion to avoid zombie connections.
     loop {
         let msg = tokio::select! {
             msg = ws_stream.next() => {
@@ -106,6 +115,14 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
                 tracing::debug!("Sink task exited, closing read loop");
                 break;
             }
+            _ = ping_interval.tick() => {
+                if outbound_tx.send(
+                    serde_json::json!({"jsonrpc":"2.0","method":"ping","params":{}}).to_string()
+                ).await.is_err() {
+                    break;
+                }
+                continue;
+            }
         };
 
         let text = match msg {
@@ -115,7 +132,27 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
             _ => continue,
         };
 
-        // Bug 5 fix: Reject oversized messages before parsing.
+        // Rate limiting: reset window if expired, reject if exceeded.
+        if rate_window_start.elapsed() >= RATE_LIMIT_WINDOW {
+            rate_count = 0;
+            rate_window_start = tokio::time::Instant::now();
+        }
+        rate_count += 1;
+        if rate_count > RATE_LIMIT_MAX {
+            let response = rpc::JsonRpcResponse::error(
+                serde_json::Value::Null,
+                -32000,
+                "Rate limit exceeded".to_string(),
+            );
+            if let Ok(json) = serde_json::to_string(&response) {
+                if outbound_tx.send(json).await.is_err() {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        // Reject oversized messages before parsing.
         const MAX_MESSAGE_SIZE: usize = 16_384; // 16 KB
         if text.len() > MAX_MESSAGE_SIZE {
             let response = rpc::JsonRpcResponse::error(
@@ -130,6 +167,10 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
             }
             continue;
         }
+
+        // Prune finished subscription tasks (e.g. from lag termination)
+        // so they don't count against the subscription limit.
+        conn.prune_finished();
 
         let response = match rpc::parse_request(&text) {
             Ok(request) => rpc::dispatch(&request, &state.producers, &mut conn, &outbound_tx),

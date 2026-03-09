@@ -49,6 +49,12 @@ impl ConnectionState {
         }
     }
 
+    /// Remove subscriptions whose tasks have already finished (e.g. due to lag).
+    /// This prevents dead entries from counting against the subscription limit.
+    pub fn prune_finished(&mut self) {
+        self.subscriptions.retain(|_, handle| !handle.is_finished());
+    }
+
     /// Returns the number of active subscriptions.
     pub fn subscription_count(&self) -> usize {
         self.subscriptions.len()

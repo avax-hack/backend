@@ -5,7 +5,6 @@ use alloy::sol_types::SolEvent;
 
 use openlaunch_shared::contracts::lp_manager::ILpManager;
 
-use crate::cache::PriceCache;
 use crate::event::EventProducers;
 use crate::event::core::{SubscriptionKey, WsEvent};
 
@@ -14,7 +13,6 @@ use crate::event::core::{SubscriptionKey, WsEvent};
 pub fn handle_pool_log(
     log: &Log,
     producers: &Arc<EventProducers>,
-    _price_cache: &Arc<PriceCache>,
 ) -> anyhow::Result<()> {
     let topics = log.topics();
     if topics.is_empty() {

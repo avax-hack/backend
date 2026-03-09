@@ -8,7 +8,6 @@ use futures_util::StreamExt;
 
 use openlaunch_shared::config;
 
-use crate::cache::PriceCache;
 use crate::event::EventProducers;
 use super::receive;
 
@@ -18,7 +17,6 @@ use super::receive;
 /// to the appropriate event producers. Automatically reconnects on failure.
 pub async fn start_pool_stream(
     producers: Arc<EventProducers>,
-    price_cache: Arc<PriceCache>,
 ) -> anyhow::Result<()> {
     let rpc_url = config::MAIN_RPC_URL.clone();
     let ws_url = crate::stream::rpc_url_to_ws(&rpc_url);
@@ -26,7 +24,7 @@ pub async fn start_pool_stream(
     tracing::info!(url = %ws_url, "Connecting to Pool event stream");
 
     loop {
-        match run_pool_subscription(&ws_url, &producers, &price_cache).await {
+        match run_pool_subscription(&ws_url, &producers).await {
             Ok(()) => {
                 tracing::warn!("Pool stream ended unexpectedly, reconnecting in 5s...");
             }
@@ -41,7 +39,6 @@ pub async fn start_pool_stream(
 async fn run_pool_subscription(
     ws_url: &str,
     producers: &Arc<EventProducers>,
-    price_cache: &Arc<PriceCache>,
 ) -> anyhow::Result<()> {
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
@@ -55,7 +52,7 @@ async fn run_pool_subscription(
     tracing::info!("Pool event stream connected");
 
     while let Some(log) = stream.next().await {
-        if let Err(e) = receive::handle_pool_log(&log, producers, price_cache) {
+        if let Err(e) = receive::handle_pool_log(&log, producers) {
             tracing::error!(error = %e, "Failed to handle Pool log");
         }
     }

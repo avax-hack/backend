@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicUsize;
 use openlaunch_shared::client::RpcClient;
 use openlaunch_shared::client::provider::ProviderId;
 use openlaunch_shared::config;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 mod cache;
 mod config_local;
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize database pool.
     let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL required");
+        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable is required"))?;
     let db_pool = sqlx::PgPool::connect(&database_url).await?;
 
     // Initialize in-memory candle manager and restore from DB.
@@ -69,9 +69,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn Pool event stream.
     let pool_producers = Arc::clone(&producers);
-    let pool_cache = Arc::clone(&price_cache);
     tokio::spawn(async move {
-        if let Err(e) = stream::pool::stream::start_pool_stream(pool_producers, pool_cache).await {
+        if let Err(e) = stream::pool::stream::start_pool_stream(pool_producers).await {
             tracing::error!(error = %e, "Pool stream terminated with error");
         }
     });
@@ -99,7 +98,17 @@ async fn main() -> anyhow::Result<()> {
         max_connections,
     };
 
-    let app = server::build_router(app_state).layer(CorsLayer::permissive());
+    let cors = match std::env::var("WS_CORS_ORIGIN") {
+        Ok(origin) => {
+            let origins: Vec<_> = origin
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            CorsLayer::new().allow_origin(AllowOrigin::list(origins))
+        }
+        Err(_) => CorsLayer::permissive(),
+    };
+    let app = server::build_router(app_state).layer(cors);
 
     let ip = std::env::var("WS_IP").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("WS_PORT").unwrap_or_else(|_| "8001".to_string());

@@ -418,14 +418,21 @@ fn spawn_subscription_task(
 }
 
 /// Map TradingView-style resolution strings to interval names.
+/// Validated against `CandleManager::INTERVALS` to stay in sync.
 fn resolve_interval(resolution: &str) -> Option<&'static str> {
-    match resolution {
-        "1" | "1m" => Some("1m"),
-        "5" | "5m" => Some("5m"),
-        "15" | "15m" => Some("15m"),
-        "60" | "1h" => Some("1h"),
-        "240" | "4h" => Some("4h"),
-        "1D" | "1d" => Some("1d"),
-        _ => None,
+    let label = match resolution {
+        "1" | "1m" => "1m",
+        "5" | "5m" => "5m",
+        "15" | "15m" => "15m",
+        "60" | "1h" => "1h",
+        "240" | "4h" => "4h",
+        "1D" | "1d" => "1d",
+        _ => return None,
+    };
+    // Verify the label exists in CandleManager to catch desync at runtime.
+    if crate::candle::INTERVALS.iter().any(|(l, _)| *l == label) {
+        Some(label)
+    } else {
+        None
     }
 }
