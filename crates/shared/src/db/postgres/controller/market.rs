@@ -58,21 +58,67 @@ pub async fn find_by_token(pool: &PgPool, token_id: &str) -> anyhow::Result<Opti
     Ok(row)
 }
 
-/// Add volume to the existing volume_24h for a token.
-pub async fn add_volume(pool: &PgPool, token_id: &str, volume: &str) -> anyhow::Result<()> {
+/// Recalculate volume_24h from swaps table for a specific token.
+pub async fn refresh_volume_24h(pool: &PgPool, token_id: &str) -> anyhow::Result<()> {
     let now = crate::types::common::current_unix_timestamp();
+    let since = now - 86400;
     sqlx::query(
         r#"
         UPDATE market_data
-        SET volume_24h = volume_24h + $2::NUMERIC, updated_at = $3
+        SET volume_24h = COALESCE(
+            (SELECT SUM(value) FROM swaps WHERE token_id = $1 AND created_at >= $2),
+            0
+        ),
+        updated_at = $3
         WHERE token_id = $1
         "#,
     )
     .bind(token_id)
-    .bind(volume)
+    .bind(since)
     .bind(now)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Recalculate volume_24h from swaps table for all tokens.
+pub async fn refresh_all_volumes_24h(pool: &PgPool) -> anyhow::Result<()> {
+    let now = crate::types::common::current_unix_timestamp();
+    let since = now - 86400;
+    sqlx::query(
+        r#"
+        UPDATE market_data m
+        SET volume_24h = COALESCE(s.vol, 0),
+            updated_at = $2
+        FROM (
+            SELECT token_id, SUM(value) AS vol
+            FROM swaps
+            WHERE created_at >= $1
+            GROUP BY token_id
+        ) s
+        WHERE m.token_id = s.token_id
+        "#,
+    )
+    .bind(since)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
+    // Zero out tokens with no swaps in the last 24h
+    sqlx::query(
+        r#"
+        UPDATE market_data
+        SET volume_24h = 0, updated_at = $2
+        WHERE token_id NOT IN (
+            SELECT DISTINCT token_id FROM swaps WHERE created_at >= $1
+        ) AND volume_24h != 0
+        "#,
+    )
+    .bind(since)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 

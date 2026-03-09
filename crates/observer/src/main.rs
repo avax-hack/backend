@@ -257,6 +257,20 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Spawn periodic volume_24h refresh (every 60 seconds)
+    // Ensures volumes decay as swaps age out of the 24h window
+    {
+        let db = Arc::clone(&db);
+        join_set.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                if let Err(e) = openlaunch_shared::db::postgres::controller::market::refresh_all_volumes_24h(db.writer()).await {
+                    tracing::error!(error = %e, "Failed to refresh volume_24h");
+                }
+            }
+        });
+    }
+
     tracing::info!("Observer running. Press Ctrl+C to stop.");
 
     tokio::select! {

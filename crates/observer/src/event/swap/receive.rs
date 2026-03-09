@@ -197,11 +197,11 @@ async fn handle_swap(
             })?;
     }
 
-    // Accumulate volume
-    market_ctrl::add_volume(pool, &mapping.token_id, &value)
+    // Recalculate 24h volume from swaps table
+    market_ctrl::refresh_volume_24h(pool, &mapping.token_id)
         .await
         .map_err(|e| {
-            ObserverError::retriable(anyhow::anyhow!("Volume update failed: {e}"))
+            ObserverError::retriable(anyhow::anyhow!("Volume refresh failed: {e}"))
         })?;
 
     tracing::debug!(
