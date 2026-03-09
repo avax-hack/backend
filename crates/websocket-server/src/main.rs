@@ -32,7 +32,9 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting OpenLaunch WebSocket Server");
 
-    let _rpc = RpcClient::init(vec![
+    // Keep RpcClient alive for the lifetime of the server — it holds
+    // shared provider connections used by spawned stream tasks.
+    let rpc = RpcClient::init(vec![
         (ProviderId::Main, config::MAIN_RPC_URL.clone()),
         (ProviderId::Sub1, config::SUB_RPC_URL_1.clone()),
         (ProviderId::Sub2, config::SUB_RPC_URL_2.clone()),
@@ -109,6 +111,10 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+
+    // Explicitly drop RPC client after server stops to ensure clean shutdown
+    // ordering: server stops → streams observe closed connections → RPC drops.
+    drop(rpc);
 
     tracing::info!("WebSocket server shut down");
     Ok(())

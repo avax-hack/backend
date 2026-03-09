@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use tokio::task::JoinHandle;
 
+use crate::config_local;
+
 /// Tracks active subscription tasks for a single WebSocket client connection.
 pub struct ConnectionState {
     /// Map from subscription channel key to the spawned forwarding task.
@@ -17,11 +19,16 @@ impl ConnectionState {
 
     /// Register a subscription task for the given key.
     /// If a task already exists for this key, the old task is aborted first.
-    pub fn subscribe(&mut self, key: String, handle: JoinHandle<()>) {
+    /// Returns false if the subscription limit is reached (and the key is new).
+    pub fn subscribe(&mut self, key: String, handle: JoinHandle<()>) -> bool {
         if let Some(old_handle) = self.subscriptions.remove(&key) {
             old_handle.abort();
+        } else if self.subscriptions.len() >= *config_local::WS_MAX_SUBSCRIPTIONS_PER_CONN {
+            handle.abort();
+            return false;
         }
         self.subscriptions.insert(key, handle);
+        true
     }
 
     /// Unsubscribe from a specific key, aborting the forwarding task.

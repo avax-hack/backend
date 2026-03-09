@@ -21,20 +21,20 @@ pub async fn start_pool_stream(
     price_cache: Arc<PriceCache>,
 ) -> anyhow::Result<()> {
     let rpc_url = config::MAIN_RPC_URL.clone();
-    let ws_url = rpc_url_to_ws(&rpc_url);
+    let ws_url = crate::stream::rpc_url_to_ws(&rpc_url);
 
     tracing::info!(url = %ws_url, "Connecting to Pool event stream");
 
     loop {
         match run_pool_subscription(&ws_url, &producers, &price_cache).await {
             Ok(()) => {
-                tracing::warn!("Pool stream ended unexpectedly, reconnecting...");
+                tracing::warn!("Pool stream ended unexpectedly, reconnecting in 5s...");
             }
             Err(e) => {
                 tracing::error!(error = %e, "Pool stream error, reconnecting in 5s...");
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
 
@@ -63,33 +63,3 @@ async fn run_pool_subscription(
     Ok(())
 }
 
-/// Convert an HTTP RPC URL to a WebSocket URL.
-/// Handles Avalanche-style endpoints where `/rpc` → `/ws`.
-fn rpc_url_to_ws(url: &str) -> String {
-    if url.starts_with("wss://") || url.starts_with("ws://") {
-        return url.to_string();
-    }
-    let ws = url
-        .replacen("https://", "wss://", 1)
-        .replacen("http://", "ws://", 1);
-    if ws.ends_with("/rpc") {
-        ws[..ws.len() - 4].to_string() + "/ws"
-    } else {
-        ws
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_rpc_url_to_ws() {
-        assert_eq!(
-            rpc_url_to_ws("https://api.avax-test.network/ext/bc/C/rpc"),
-            "wss://api.avax-test.network/ext/bc/C/ws"
-        );
-        assert_eq!(rpc_url_to_ws("https://rpc.example.com"), "wss://rpc.example.com");
-        assert_eq!(rpc_url_to_ws("http://localhost:8545"), "ws://localhost:8545");
-    }
-}

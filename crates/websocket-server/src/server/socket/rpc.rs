@@ -205,33 +205,19 @@ fn handle_keyed_subscribe(
     let channel_key = sub_key.to_channel_key();
     let method = request.method.clone();
 
-    let mut rx = producer.subscribe(&channel_key);
+    let rx = producer.subscribe(&channel_key);
     let tx = outbound_tx.clone();
     let channel_key_for_task = channel_key.clone();
 
-    let handle = tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
-                    if let Ok(json) = serde_json::to_string(&push) {
-                        if tx.send(json).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(channel = %channel_key_for_task, lagged = n, "Subscriber lagged, terminating subscription");
-                    break;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
-                }
-            }
-        }
-    });
+    let handle = spawn_subscription_task(rx, tx, method, channel_key_for_task);
 
-    conn.subscribe(channel_key, handle);
+    if !conn.subscribe(channel_key, handle) {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32000,
+            "Subscription limit reached".to_string(),
+        );
+    }
 
     JsonRpcResponse::success(
         request.id.clone(),
@@ -250,33 +236,19 @@ fn handle_global_subscribe(
     let channel_key = sub_key.to_channel_key();
     let method = request.method.clone();
 
-    let mut rx = producer.subscribe(&channel_key);
+    let rx = producer.subscribe(&channel_key);
     let tx = outbound_tx.clone();
     let channel_key_for_task = channel_key.clone();
 
-    let handle = tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
-                    if let Ok(json) = serde_json::to_string(&push) {
-                        if tx.send(json).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(lagged = n, "new_content subscriber lagged, terminating subscription");
-                    break;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
-                }
-            }
-        }
-    });
+    let handle = spawn_subscription_task(rx, tx, method, channel_key_for_task);
 
-    conn.subscribe(channel_key, handle);
+    if !conn.subscribe(channel_key, handle) {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32000,
+            "Subscription limit reached".to_string(),
+        );
+    }
 
     JsonRpcResponse::success(
         request.id.clone(),
@@ -317,33 +289,19 @@ fn handle_chart_subscribe(
     let channel_key = sub_key.to_channel_key();
     let method = request.method.clone();
 
-    let mut rx = producer.subscribe(&channel_key);
+    let rx = producer.subscribe(&channel_key);
     let tx = outbound_tx.clone();
     let channel_key_for_task = channel_key.clone();
 
-    let handle = tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let push = JsonRpcPush::new(method.clone(), channel_key_for_task.clone(), event.data);
-                    if let Ok(json) = serde_json::to_string(&push) {
-                        if tx.send(json).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(channel = %channel_key_for_task, lagged = n, "Chart subscriber lagged");
-                    break;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
-                }
-            }
-        }
-    });
+    let handle = spawn_subscription_task(rx, tx, method, channel_key_for_task);
 
-    conn.subscribe(channel_key, handle);
+    if !conn.subscribe(channel_key, handle) {
+        return JsonRpcResponse::error(
+            request.id.clone(),
+            -32000,
+            "Subscription limit reached".to_string(),
+        );
+    }
 
     JsonRpcResponse::success(
         request.id.clone(),
@@ -413,6 +371,50 @@ fn handle_chart_unsubscribe(
         request.id.clone(),
         serde_json::json!({"unsubscribed": removed}),
     )
+}
+
+/// Spawn a subscription forwarding task that sends events to the client.
+/// On lag, notifies the client with an error push before terminating.
+fn spawn_subscription_task(
+    mut rx: tokio::sync::broadcast::Receiver<crate::event::core::WsEvent>,
+    tx: mpsc::Sender<String>,
+    method: String,
+    channel_key: String,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let push = JsonRpcPush::new(method.clone(), channel_key.clone(), event.data);
+                    if let Ok(json) = serde_json::to_string(&push) {
+                        if tx.send(json).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(channel = %channel_key, lagged = n, "Subscriber lagged, terminating subscription");
+                    let error_push = JsonRpcPush::new(
+                        method.clone(),
+                        channel_key.clone(),
+                        serde_json::json!({
+                            "type": "SUBSCRIPTION_ERROR",
+                            "error": "lagged",
+                            "missed": n,
+                            "message": "Subscription terminated due to slow consumption",
+                        }),
+                    );
+                    if let Ok(json) = serde_json::to_string(&error_push) {
+                        let _ = tx.send(json).await;
+                    }
+                    break;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    })
 }
 
 /// Map TradingView-style resolution strings to interval names.

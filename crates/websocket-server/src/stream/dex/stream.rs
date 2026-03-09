@@ -57,20 +57,20 @@ pub async fn start_dex_stream(
     db: PgPool,
 ) -> anyhow::Result<()> {
     let rpc_url = config::MAIN_RPC_URL.clone();
-    let ws_url = rpc_url_to_ws(&rpc_url);
+    let ws_url = crate::stream::rpc_url_to_ws(&rpc_url);
 
     tracing::info!(url = %ws_url, "Connecting to DEX Swap event stream");
 
     loop {
         match run_dex_subscription(&ws_url, &producers, &price_cache, &candle_mgr, &db).await {
             Ok(()) => {
-                tracing::warn!("DEX stream ended unexpectedly, reconnecting...");
+                tracing::warn!("DEX stream ended unexpectedly, reconnecting in 5s...");
             }
             Err(e) => {
                 tracing::error!(error = %e, "DEX stream error, reconnecting in 5s...");
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
 
@@ -95,14 +95,13 @@ async fn run_dex_subscription(
     let mut mappings = load_mappings(db).await;
     tracing::info!(count = mappings.len(), "DEX stream connected, loaded pool mappings");
 
-    let mut event_count: u64 = 0;
-    let reload_interval: u64 = 100;
+    let mut last_reload = tokio::time::Instant::now();
+    let reload_interval = std::time::Duration::from_secs(300);
 
     while let Some(log) = stream.next().await {
-        event_count += 1;
-
-        if event_count % reload_interval == 0 {
+        if last_reload.elapsed() >= reload_interval {
             mappings = load_mappings(db).await;
+            last_reload = tokio::time::Instant::now();
             tracing::info!(count = mappings.len(), "Reloaded pool mappings (periodic)");
         }
 
@@ -116,35 +115,3 @@ async fn run_dex_subscription(
     Ok(())
 }
 
-fn rpc_url_to_ws(url: &str) -> String {
-    if url.starts_with("wss://") || url.starts_with("ws://") {
-        return url.to_string();
-    }
-    let ws = url
-        .replacen("https://", "wss://", 1)
-        .replacen("http://", "ws://", 1);
-    if ws.ends_with("/rpc") {
-        ws[..ws.len() - 4].to_string() + "/ws"
-    } else {
-        ws
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_rpc_url_to_ws() {
-        assert_eq!(
-            rpc_url_to_ws("https://api.avax-test.network/ext/bc/C/rpc"),
-            "wss://api.avax-test.network/ext/bc/C/ws"
-        );
-        assert_eq!(
-            rpc_url_to_ws("https://rpc.example.com"),
-            "wss://rpc.example.com"
-        );
-        assert_eq!(rpc_url_to_ws("http://localhost:8545"), "ws://localhost:8545");
-        assert_eq!(rpc_url_to_ws("wss://already.ws"), "wss://already.ws");
-    }
-}

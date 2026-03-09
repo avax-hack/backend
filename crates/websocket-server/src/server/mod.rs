@@ -42,7 +42,7 @@ async fn ws_upgrade_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (axum::http::StatusCode, String)> {
-    let current = state.connection_count.load(Ordering::Relaxed);
+    let current = state.connection_count.load(Ordering::SeqCst);
     if current >= state.max_connections {
         tracing::warn!(
             current_connections = current,
@@ -54,7 +54,7 @@ async fn ws_upgrade_handler(
             "Too many connections".to_string(),
         ));
     }
-    state.connection_count.fetch_add(1, Ordering::Relaxed);
+    state.connection_count.fetch_add(1, Ordering::SeqCst);
     Ok(ws.on_upgrade(move |socket| handle_ws_connection(socket, state)))
 }
 
@@ -142,7 +142,7 @@ async fn handle_ws_connection(socket: WebSocket, state: AppState) {
     let _ = sink_task.await;
 
     // Bug 6 fix: Decrement connection counter on disconnect.
-    state.connection_count.fetch_sub(1, Ordering::Relaxed);
+    state.connection_count.fetch_sub(1, Ordering::SeqCst);
 
     tracing::debug!("WebSocket connection closed");
 }

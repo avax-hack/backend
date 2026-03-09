@@ -10,4 +10,9 @@ lazy_static! {
         .unwrap_or_else(|_| "300".to_string())
         .parse()
         .unwrap_or(300);
+
+    pub static ref WS_MAX_SUBSCRIPTIONS_PER_CONN: usize = std::env::var("WS_MAX_SUBSCRIPTIONS_PER_CONN")
+        .unwrap_or_else(|_| "100".to_string())
+        .parse()
+        .unwrap_or(100);
 }
