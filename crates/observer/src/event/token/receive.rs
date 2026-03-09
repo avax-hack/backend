@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
+use openlaunch_shared::config;
 use openlaunch_shared::types::event::{OnChainEvent, TransferEvent};
 use openlaunch_shared::utils::price::wei_to_display;
 
@@ -13,12 +15,26 @@ use crate::sync::receive::ReceiveManager;
 const TOKEN_DECIMALS: u32 = 18;
 const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
+/// Build the set of contract addresses to exclude from balance tracking.
+fn build_excluded_addresses() -> HashSet<String> {
+    [
+        config::IDO_CONTRACT.as_str(),
+        config::LP_MANAGER_CONTRACT.as_str(),
+        config::POOL_MANAGER_CONTRACT.as_str(),
+    ]
+    .iter()
+    .map(|a| a.to_lowercase())
+    .collect()
+}
+
 /// Process Token Transfer event batches received from the stream.
 pub async fn process_token_events(
     pool: &PgPool,
     rx: &mut mpsc::Receiver<EventBatch<OnChainEvent>>,
     receive_mgr: &Arc<ReceiveManager>,
 ) -> Result<(), ObserverError> {
+    let excluded = build_excluded_addresses();
+
     while let Some(batch) = rx.recv().await {
         // Wait until dependencies are met before processing
         while !receive_mgr.can_process(EventType::Token, batch.to_block) {
@@ -39,7 +55,7 @@ pub async fn process_token_events(
 
         for event in &batch.events {
             if let OnChainEvent::Transfer(transfer) = event {
-                if let Err(e) = handle_transfer(pool, transfer).await {
+                if let Err(e) = handle_transfer(pool, transfer, &excluded).await {
                     if e.is_skippable() {
                         tracing::warn!(error = %e, "Skipping Transfer event");
                         continue;
@@ -55,17 +71,20 @@ pub async fn process_token_events(
     Ok(())
 }
 
-async fn handle_transfer(pool: &PgPool, e: &TransferEvent) -> Result<(), ObserverError> {
+async fn handle_transfer(pool: &PgPool, e: &TransferEvent, excluded: &HashSet<String>) -> Result<(), ObserverError> {
+    let from_lower = e.from.to_lowercase();
+    let to_lower = e.to.to_lowercase();
+
     let display_amount = wei_to_display(&e.amount, TOKEN_DECIMALS)
         .map_err(|err| ObserverError::skippable(format!("Invalid amount: {err}")))?;
 
-    // Update sender balance (decrease) - skip if mint (from zero address)
-    if e.from != ZERO_ADDRESS {
+    // Update sender balance (decrease) - skip zero address and contract addresses
+    if from_lower != ZERO_ADDRESS && !excluded.contains(&from_lower) {
         update_balance_subtract(pool, &e.from, &e.token, &display_amount).await?;
     }
 
-    // Update receiver balance (increase) - skip if burn (to zero address)
-    if e.to != ZERO_ADDRESS {
+    // Update receiver balance (increase) - skip zero address and contract addresses
+    if to_lower != ZERO_ADDRESS && !excluded.contains(&to_lower) {
         update_balance_add(pool, &e.to, &e.token, &display_amount).await?;
     }
 
