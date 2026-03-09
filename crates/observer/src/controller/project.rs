@@ -5,6 +5,17 @@ use openlaunch_shared::utils::price::wei_to_display;
 const USDC_DECIMALS: u32 = 6;
 const TOKEN_DECIMALS: u32 = 18;
 
+/// Fetch all on-chain token addresses (project_id) from the projects table.
+/// Only returns projects that have been confirmed on-chain (tx_hash is non-empty).
+pub async fn get_token_addresses(pool: &PgPool) -> anyhow::Result<Vec<String>> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT project_id FROM projects WHERE tx_hash <> ''",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Insert a new project from a ProjectCreated on-chain event.
 /// All numeric values are normalized from raw on-chain wei to human-readable strings.
 pub async fn insert_from_event(

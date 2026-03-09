@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create mpsc channels
     let (ido_tx, mut ido_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
-    let (_token_tx, mut token_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
+    let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
     let (swap_tx, mut swap_rx) = tokio::sync::mpsc::channel::<EventBatch<RawSwapEvent>>(128);
     let (lp_tx, mut lp_rx) = tokio::sync::mpsc::channel::<EventBatch<OnChainEvent>>(128);
     let (_price_tx, mut price_rx) = tokio::sync::mpsc::channel::<EventBatch<PriceUpdate>>(128);
@@ -141,6 +141,17 @@ async fn main() -> anyhow::Result<()> {
         let tx = swap_tx.clone();
         join_set.spawn(async move {
             run_swap_stream(&rpc, &stream_mgr, &tx).await
+        });
+    }
+
+    // Spawn Token Transfer stream
+    {
+        let rpc = Arc::clone(&rpc);
+        let db = Arc::clone(&db);
+        let stream_mgr = Arc::clone(&stream_mgr);
+        let tx = token_tx.clone();
+        join_set.spawn(async move {
+            run_token_stream(&rpc, &db, &stream_mgr, &tx).await
         });
     }
 
@@ -340,6 +351,70 @@ async fn run_swap_stream(
         .await;
 
         handle_stream_result("swap_stream", EventType::Swap, &result, &range, stream_mgr).await;
+    }
+}
+
+async fn run_token_stream(
+    rpc: &Arc<RpcClient>,
+    db: &Arc<PostgresDatabase>,
+    stream_mgr: &Arc<StreamManager>,
+    tx: &tokio::sync::mpsc::Sender<EventBatch<OnChainEvent>>,
+) -> anyhow::Result<()> {
+    let poll_interval = Duration::from_millis(*config_local::POLL_INTERVAL_MS);
+    let retry_config = RetryConfig::default();
+
+    // Reload token addresses periodically so newly created projects are tracked.
+    let mut token_addresses = controller::project::get_token_addresses(db.reader())
+        .await
+        .unwrap_or_default();
+    let mut last_reload = tokio::time::Instant::now();
+    let reload_interval = Duration::from_secs(60);
+
+    tracing::info!(count = token_addresses.len(), "Token stream loaded addresses");
+
+    loop {
+        tokio::time::sleep(poll_interval).await;
+
+        // Reload token list periodically to pick up new projects.
+        if last_reload.elapsed() >= reload_interval {
+            match controller::project::get_token_addresses(db.reader()).await {
+                Ok(addrs) => {
+                    if addrs.len() != token_addresses.len() {
+                        tracing::info!(
+                            old_count = token_addresses.len(),
+                            new_count = addrs.len(),
+                            "Token addresses reloaded"
+                        );
+                    }
+                    token_addresses = addrs;
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to reload token addresses");
+                }
+            }
+            last_reload = tokio::time::Instant::now();
+        }
+
+        if token_addresses.is_empty() {
+            continue;
+        }
+
+        let latest_block = rpc.latest_block();
+        if latest_block == 0 {
+            continue;
+        }
+
+        let range = match stream_mgr.get_range(EventType::Token, latest_block) {
+            Some(r) => r,
+            None => continue,
+        };
+
+        let result = run_event_handler_with_retry("token_stream", &retry_config, || {
+            event::token::stream::poll_token_events(rpc, &range, &token_addresses, tx)
+        })
+        .await;
+
+        handle_stream_result("token_stream", EventType::Token, &result, &range, stream_mgr).await;
     }
 }
 
