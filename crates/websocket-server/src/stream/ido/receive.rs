@@ -6,6 +6,7 @@ use alloy::sol_types::SolEvent;
 use openlaunch_shared::contracts::ido::IIDO;
 
 use crate::cache::PriceCache;
+use crate::candle::CandleManager;
 use crate::event::EventProducers;
 use crate::event::core::{SubscriptionKey, WsEvent};
 
@@ -15,6 +16,7 @@ pub fn handle_ido_log(
     log: &Log,
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
+    candle_mgr: &Arc<CandleManager>,
 ) -> anyhow::Result<()> {
     let topics = log.topics();
     if topics.is_empty() {
@@ -28,7 +30,7 @@ pub fn handle_ido_log(
         handle_project_created(&decoded.inner.data, producers);
     } else if signature == IIDO::TokensPurchased::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::TokensPurchased>()?;
-        handle_tokens_purchased(&decoded.inner.data, producers, price_cache);
+        handle_tokens_purchased(&decoded.inner.data, producers, price_cache, candle_mgr);
     } else if signature == IIDO::Graduated::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::Graduated>()?;
         handle_graduated(&decoded.inner.data, producers);
@@ -79,6 +81,7 @@ fn handle_tokens_purchased(
     event: &IIDO::TokensPurchased,
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
+    candle_mgr: &Arc<CandleManager>,
 ) {
     let token = format!("{:#x}", event.token);
     let buyer = format!("{:#x}", event.buyer);
@@ -133,6 +136,38 @@ fn handle_tokens_purchased(
         method: "price_subscribe".to_string(),
         data: price_data,
     });
+
+    // Update in-memory candles and broadcast to all intervals
+    let price_f64: f64 = price_str.parse().unwrap_or(0.0);
+    let volume_f64: f64 = usdc_amount.parse().unwrap_or(0.0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    candle_mgr.update(&token, price_f64, volume_f64, now);
+
+    // Broadcast updated candle for each interval
+    for &(interval, _) in CandleManager::intervals() {
+        if let Some(candle) = candle_mgr.get(&token, interval) {
+            let chart_data = serde_json::json!({
+                "type": "CHART_UPDATE",
+                "token_id": token,
+                "interval": interval,
+                "o": candle.open,
+                "h": candle.high,
+                "l": candle.low,
+                "c": candle.close,
+                "v": candle.volume,
+                "t": candle.time,
+            });
+            let chart_key = SubscriptionKey::Chart(token.clone(), interval.to_string()).to_channel_key();
+            producers.chart.publish(&chart_key, WsEvent {
+                method: "chart_subscribe".to_string(),
+                data: chart_data,
+            });
+        }
+    }
 
     tracing::info!(token = %token, buyer = %buyer, "TokensPurchased event forwarded to project, trade, and price channels");
 }

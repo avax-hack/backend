@@ -45,11 +45,15 @@ async fn main() -> anyhow::Result<()> {
     // Initialize price cache.
     let price_cache = Arc::new(cache::PriceCache::new());
 
+    // Initialize in-memory candle manager.
+    let candle_mgr = Arc::new(candle::CandleManager::new());
+
     // Spawn IDO event stream.
     let ido_producers = Arc::clone(&producers);
     let ido_cache = Arc::clone(&price_cache);
+    let ido_candle = Arc::clone(&candle_mgr);
     tokio::spawn(async move {
-        if let Err(e) = stream::ido::stream::start_ido_stream(ido_producers, ido_cache).await {
+        if let Err(e) = stream::ido::stream::start_ido_stream(ido_producers, ido_cache, ido_candle).await {
             tracing::error!(error = %e, "IDO stream terminated with error");
         }
     });
