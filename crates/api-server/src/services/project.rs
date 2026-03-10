@@ -109,17 +109,6 @@ pub async fn create_project(
         .validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let is_available = project::validate_symbol(db.reader(), &request.symbol)
-        .await
-        .map_err(AppError::Internal)?;
-
-    if !is_available {
-        return Err(AppError::BadRequest(format!(
-            "Symbol {} is already taken",
-            request.symbol
-        )));
-    }
-
     // Ensure account exists
     account::upsert(db.writer(), creator)
         .await

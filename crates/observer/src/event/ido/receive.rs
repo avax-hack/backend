@@ -295,6 +295,17 @@ async fn fetch_and_insert_milestones(
     let resp = reqwest::get(token_uri).await?;
     let body: serde_json::Value = resp.json().await?;
 
+    // Update image_uri from metadata if present
+    if let Some(image_uri) = body["image_uri"].as_str() {
+        if !image_uri.is_empty() {
+            sqlx::query("UPDATE projects SET image_uri = $1 WHERE project_id = $2")
+                .bind(image_uri)
+                .bind(token_id)
+                .execute(pool)
+                .await?;
+        }
+    }
+
     let milestones = body["milestones"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("No milestones array in metadata"))?;
