@@ -102,6 +102,9 @@ pub async fn handle_swap_log(
     // Broadcast trade event
     let token_lower = token_id.to_lowercase();
     let buyer = format!("{:#x}", event.sender);
+    let tx_hash = log.transaction_hash
+        .map(|h| format!("{:#x}", h))
+        .unwrap_or_default();
     let usdc_display = openlaunch_shared::utils::price::wei_to_display(&usdc_amount.to_string(), 6)
         .unwrap_or_else(|_| usdc_amount.to_string());
     let token_display = openlaunch_shared::utils::price::wei_to_display(&token_amount.to_string(), 18)
@@ -113,6 +116,7 @@ pub async fn handle_swap_log(
         "event_type": event_type,
         "usdc_amount": usdc_display,
         "token_amount": token_display,
+        "tx_hash": tx_hash,
     });
     let trade_key = SubscriptionKey::Trade(token_lower.clone()).to_channel_key();
     producers.trade.publish(
@@ -141,9 +145,6 @@ pub async fn handle_swap_log(
     );
 
     // Insert swap into DB so REST API can serve swap history
-    let tx_hash = log.transaction_hash
-        .map(|h| format!("{:#x}", h))
-        .unwrap_or_default();
     let block_number = log.block_number.unwrap_or(0) as i64;
     if let Err(e) = openlaunch_shared::db::postgres::controller::swap::insert(
         db_pool,

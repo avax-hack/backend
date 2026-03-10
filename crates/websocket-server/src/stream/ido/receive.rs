@@ -33,7 +33,7 @@ pub async fn handle_ido_log(
         handle_project_created(&decoded.inner.data, producers);
     } else if signature == IIDO::TokensPurchased::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::TokensPurchased>()?;
-        handle_tokens_purchased(&decoded.inner.data, producers, price_cache, candle_mgr, db_pool).await;
+        handle_tokens_purchased(log, &decoded.inner.data, producers, price_cache, candle_mgr, db_pool).await;
     } else if signature == IIDO::Graduated::SIGNATURE_HASH {
         let decoded = log.log_decode::<IIDO::Graduated>()?;
         handle_graduated(&decoded.inner.data, producers);
@@ -81,6 +81,7 @@ fn handle_project_created(event: &IIDO::ProjectCreated, producers: &Arc<EventPro
 }
 
 async fn handle_tokens_purchased(
+    log: &Log,
     event: &IIDO::TokensPurchased,
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
@@ -89,6 +90,9 @@ async fn handle_tokens_purchased(
 ) {
     let token = format!("{:#x}", event.token);
     let buyer = format!("{:#x}", event.buyer);
+    let tx_hash = log.transaction_hash
+        .map(|h| format!("{:#x}", h))
+        .unwrap_or_default();
     let usdc_amount = event.usdcAmount.to_string();
     let token_amount = event.tokenAmount.to_string();
     let usdc_display = {
@@ -155,6 +159,7 @@ async fn handle_tokens_purchased(
         "event_type": "BUY",
         "usdc_amount": usdc_display,
         "token_amount": token_display,
+        "tx_hash": tx_hash,
     });
 
     let trade_key = SubscriptionKey::Trade(token.clone()).to_channel_key();
