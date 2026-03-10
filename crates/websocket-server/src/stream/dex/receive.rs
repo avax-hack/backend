@@ -27,12 +27,13 @@ sol! {
 }
 
 /// Handle a raw Swap log from the PoolManager contract.
-pub fn handle_swap_log(
+pub async fn handle_swap_log(
     log: &Log,
     mappings: &[PoolMapping],
     producers: &Arc<EventProducers>,
     price_cache: &Arc<PriceCache>,
     candle_mgr: &Arc<CandleManager>,
+    db_pool: &sqlx::PgPool,
 ) -> anyhow::Result<()> {
     let topics = log.topics();
     if topics.is_empty() {
@@ -56,19 +57,18 @@ pub fn handle_swap_log(
     let amount0: i128 = event.amount0;
     let amount1: i128 = event.amount1;
 
-    // Uniswap V4 Swap event amounts: positive = tokens flow INTO pool,
-    // negative = tokens flow OUT of pool. So for our token:
-    //   amount < 0 → pool sends token to user → user BUYs
-    //   amount > 0 → user sends token to pool → user SELLs
+    // Uniswap V4 sign convention (from Pool.sol):
+    //   amount > 0 → user RECEIVES (gains) that token → BUY
+    //   amount < 0 → user SENDS (pays) that token → SELL
     let (usdc_amount, token_amount, event_type): (u128, u128, &str) = if mapping.is_token0 {
         let token_amt = amount0.unsigned_abs();
         let usdc_amt = amount1.unsigned_abs();
-        let evt = if amount0 < 0 { "BUY" } else { "SELL" };
+        let evt = if amount0 > 0 { "BUY" } else { "SELL" };
         (usdc_amt, token_amt, evt)
     } else {
         let token_amt = amount1.unsigned_abs();
         let usdc_amt = amount0.unsigned_abs();
-        let evt = if amount1 < 0 { "BUY" } else { "SELL" };
+        let evt = if amount1 > 0 { "BUY" } else { "SELL" };
         (usdc_amt, token_amt, evt)
     };
 
@@ -102,13 +102,17 @@ pub fn handle_swap_log(
     // Broadcast trade event
     let token_lower = token_id.to_lowercase();
     let buyer = format!("{:#x}", event.sender);
+    let usdc_display = openlaunch_shared::utils::price::wei_to_display(&usdc_amount.to_string(), 6)
+        .unwrap_or_else(|_| usdc_amount.to_string());
+    let token_display = openlaunch_shared::utils::price::wei_to_display(&token_amount.to_string(), 18)
+        .unwrap_or_else(|_| token_amount.to_string());
     let trade_data = serde_json::json!({
         "type": "TRADE",
         "token": token_lower,
         "buyer": buyer,
         "event_type": event_type,
-        "usdc_amount": usdc_amount.to_string(),
-        "token_amount": token_amount.to_string(),
+        "usdc_amount": usdc_display,
+        "token_amount": token_display,
     });
     let trade_key = SubscriptionKey::Trade(token_lower.clone()).to_channel_key();
     producers.trade.publish(
@@ -123,8 +127,8 @@ pub fn handle_swap_log(
     let price_data = serde_json::json!({
         "type": "PRICE_UPDATE",
         "token_id": token_lower,
-        "usdc_amount": usdc_amount.to_string(),
-        "token_amount": token_amount.to_string(),
+        "usdc_amount": usdc_display,
+        "token_amount": token_display,
         "price": price_str,
     });
     let price_key = SubscriptionKey::Price(token_lower.clone()).to_channel_key();
@@ -135,6 +139,27 @@ pub fn handle_swap_log(
             data: price_data,
         },
     );
+
+    // Insert swap into DB so REST API can serve swap history
+    let tx_hash = log.transaction_hash
+        .map(|h| format!("{:#x}", h))
+        .unwrap_or_default();
+    let block_number = log.block_number.unwrap_or(0) as i64;
+    if let Err(e) = openlaunch_shared::db::postgres::controller::swap::insert(
+        db_pool,
+        &token_lower,
+        &buyer,
+        event_type,
+        &usdc_display,
+        &token_display,
+        &price_str,
+        &usdc_display,
+        &tx_hash,
+        block_number,
+        now,
+    ).await {
+        tracing::warn!(error = %e, "Failed to insert swap into DB");
+    }
 
     tracing::info!(
         token = %token_lower,

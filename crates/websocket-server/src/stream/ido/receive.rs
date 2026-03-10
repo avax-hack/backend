@@ -91,6 +91,14 @@ async fn handle_tokens_purchased(
     let buyer = format!("{:#x}", event.buyer);
     let usdc_amount = event.usdcAmount.to_string();
     let token_amount = event.tokenAmount.to_string();
+    let usdc_display = {
+        use openlaunch_shared::utils::price::wei_to_display;
+        wei_to_display(&usdc_amount, 6).unwrap_or_else(|_| usdc_amount.clone())
+    };
+    let token_display = {
+        use openlaunch_shared::utils::price::wei_to_display;
+        wei_to_display(&token_amount, 18).unwrap_or_else(|_| token_amount.clone())
+    };
 
     // Fetch market info from DB and add current purchase amount
     // (observer may not have processed this event yet)
@@ -128,8 +136,8 @@ async fn handle_tokens_purchased(
         "type": "TOKENS_PURCHASED",
         "token": token,
         "buyer": buyer,
-        "usdc_amount": usdc_amount,
-        "token_amount": token_amount,
+        "usdc_amount": usdc_display,
+        "token_amount": token_display,
         "market_info": market_info,
     });
 
@@ -145,8 +153,8 @@ async fn handle_tokens_purchased(
         "token": token,
         "buyer": buyer,
         "event_type": "BUY",
-        "usdc_amount": usdc_amount,
-        "token_amount": token_amount,
+        "usdc_amount": usdc_display,
+        "token_amount": token_display,
     });
 
     let trade_key = SubscriptionKey::Trade(token.clone()).to_channel_key();
@@ -162,8 +170,8 @@ async fn handle_tokens_purchased(
     let price_data = serde_json::json!({
         "type": "PRICE_UPDATE",
         "token_id": token,
-        "usdc_amount": usdc_amount,
-        "token_amount": token_amount,
+        "usdc_amount": usdc_display,
+        "token_amount": token_display,
         "price": price_str,
     });
 
