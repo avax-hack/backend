@@ -434,8 +434,12 @@ async fn handle_stream_result(
     match result {
         Ok(()) => {
             stream_mgr.advance(event_type, range.to_block);
-            // Block progress is persisted by the periodic persister task,
-            // which writes the minimum of stream and receive progress.
+            tracing::info!(
+                handler = name,
+                from = range.from_block,
+                to = range.to_block,
+                "Polled blocks"
+            );
         }
         Err(e) => {
             tracing::error!(handler = name, error = %e, "Stream handler error");
