@@ -23,16 +23,20 @@ pub async fn start_pool_stream(
 
     tracing::info!(url = %ws_url, "Connecting to Pool event stream");
 
+    let mut attempt: u32 = 0;
     loop {
+        attempt += 1;
         match run_pool_subscription(&ws_url, &producers).await {
             Ok(()) => {
-                tracing::warn!("Pool stream ended unexpectedly, reconnecting in 5s...");
+                tracing::warn!(attempt, "Pool stream disconnected (stream ended), reconnecting...");
             }
             Err(e) => {
-                tracing::error!(error = %e, "Pool stream error, reconnecting in 5s...");
+                tracing::error!(attempt, error = %e, "Pool stream connection failed, reconnecting...");
             }
         }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let delay = std::cmp::min(5 * 2u64.saturating_pow(attempt.min(5) - 1), 60);
+        tracing::info!(delay_secs = delay, attempt, "Pool stream reconnecting after backoff");
+        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
     }
 }
 
@@ -49,7 +53,7 @@ async fn run_pool_subscription(
     let sub = provider.subscribe_logs(&filter).await?;
     let mut stream = sub.into_stream();
 
-    tracing::info!("Pool event stream connected");
+    tracing::info!(url = %ws_url, "Pool event stream connected successfully");
 
     while let Some(log) = stream.next().await {
         if let Err(e) = receive::handle_pool_log(&log, producers) {

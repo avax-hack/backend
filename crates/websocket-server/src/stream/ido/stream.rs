@@ -30,16 +30,20 @@ pub async fn start_ido_stream(
 
     tracing::info!(url = %ws_url, "Connecting to IDO event stream");
 
+    let mut attempt: u32 = 0;
     loop {
+        attempt += 1;
         match run_ido_subscription(&ws_url, &producers, &price_cache, &candle_mgr, &db_pool).await {
             Ok(()) => {
-                tracing::warn!("IDO stream ended unexpectedly, reconnecting in 5s...");
+                tracing::warn!(attempt, "IDO stream disconnected (stream ended), reconnecting...");
             }
             Err(e) => {
-                tracing::error!(error = %e, "IDO stream error, reconnecting in 5s...");
+                tracing::error!(attempt, error = %e, "IDO stream connection failed, reconnecting...");
             }
         }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let delay = std::cmp::min(5 * 2u64.saturating_pow(attempt.min(5) - 1), 60);
+        tracing::info!(delay_secs = delay, attempt, "IDO stream reconnecting after backoff");
+        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
     }
 }
 
@@ -59,7 +63,7 @@ async fn run_ido_subscription(
     let sub = provider.subscribe_logs(&filter).await?;
     let mut stream = sub.into_stream();
 
-    tracing::info!("IDO event stream connected");
+    tracing::info!(url = %ws_url, "IDO event stream connected successfully");
 
     while let Some(log) = stream.next().await {
         if let Err(e) = receive::handle_ido_log(&log, producers, price_cache, candle_mgr, db_pool).await {

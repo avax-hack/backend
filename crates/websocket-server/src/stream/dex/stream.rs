@@ -64,16 +64,20 @@ pub async fn start_dex_stream(
 
     tracing::info!(url = %ws_url, "Connecting to DEX Swap event stream");
 
+    let mut attempt: u32 = 0;
     loop {
+        attempt += 1;
         match run_dex_subscription(&ws_url, &producers, &price_cache, &candle_mgr, &db).await {
             Ok(()) => {
-                tracing::warn!("DEX stream ended unexpectedly, reconnecting in 5s...");
+                tracing::warn!(attempt, "DEX stream disconnected (stream ended), reconnecting...");
             }
             Err(e) => {
-                tracing::error!(error = %e, "DEX stream error, reconnecting in 5s...");
+                tracing::error!(attempt, error = %e, "DEX stream connection failed, reconnecting...");
             }
         }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let delay = std::cmp::min(5 * 2u64.saturating_pow(attempt.min(5) - 1), 60);
+        tracing::info!(delay_secs = delay, attempt, "DEX stream reconnecting after backoff");
+        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
     }
 }
 
@@ -96,7 +100,7 @@ async fn run_dex_subscription(
     let mut stream = sub.into_stream();
 
     let mut mappings = load_mappings(db).await;
-    tracing::info!(count = mappings.len(), "DEX stream connected, loaded pool mappings");
+    tracing::info!(url = %ws_url, count = mappings.len(), "DEX stream connected successfully, loaded pool mappings");
 
     let mut last_reload = tokio::time::Instant::now();
     let reload_interval = std::time::Duration::from_secs(300);
@@ -109,7 +113,7 @@ async fn run_dex_subscription(
         }
 
         if let Err(e) =
-            receive::handle_swap_log(&log, &mappings, producers, price_cache, candle_mgr)
+            receive::handle_swap_log(&log, &mappings, producers, price_cache, candle_mgr, db).await
         {
             tracing::error!(error = %e, "Failed to handle DEX Swap log");
         }
