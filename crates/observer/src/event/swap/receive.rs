@@ -257,6 +257,6 @@ fn compute_price(native_amount: &str, token_amount: &str) -> String {
     if token == BigDecimal::from(0) {
         return "0".to_string();
     }
-    let price = (native / token).round(10);
+    let price = (native / token).round(18);
     format!("{price}")
 }
